@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
 import warnings
-warnings.filterwarnings("ignore")
 
+warnings.filterwarnings("ignore")
+import os
 import json
 import time
 import sqlite3
@@ -10,11 +11,9 @@ import logging
 import datetime
 import loompy as lp
 import pandas as pd
+from pyscenic.cli.utils import load_signatures
 
-logging.basicConfig(
-    level="INFO",
-    format="[%(asctime)s][%(levelname)s] %(message)s"
-)
+logging.basicConfig(level="INFO", format="[%(asctime)s][%(levelname)s] %(message)s")
 
 
 ###########################################################
@@ -22,7 +21,7 @@ logging.basicConfig(
 ###########################################################
 
 # path to the results manifests
-# expected manifest fromat 
+# expected manifest fromat
 # | dataset | dataset_lineage | ontology_label |      AUCell      |    GRNBoost   |   cisTarget   |
 # |   name  |     lineage     |   onto label   |  path/file.loom  |  path/adj.csv | path/reg.csv  |
 RESULTS_MANIFEST = "results.csv"
@@ -34,7 +33,7 @@ DB_PATH = f"cellregulon_{datetime.date.today()}.db"
 FETCH_COEXPRESION = True
 
 # get motif expression from cisTarget?
-FETHC_MOTIF_EXPRESION = True
+FETHC_MOTIF_ENRICHMENT = True
 
 
 ###########################################################
@@ -43,7 +42,7 @@ FETHC_MOTIF_EXPRESION = True
 
 # querys to create database structure
 # - nodes table
-create_nodes_table ="""
+create_nodes_table = """
 CREATE TABLE IF NOT EXISTS nodes (
         id INTEGER PRIMARY KEY,
         name TEXT,
@@ -111,20 +110,21 @@ def main():
     nodes = {}
 
     # process manifest file
-    df = pd.read_csv(RESULTS_MANIFEST,index_col=False)
+    df = pd.read_csv(RESULTS_MANIFEST, index_col=False)
     time_process = time.time()
-    for _,row in df.iterrows():
+    for _, row in df.iterrows():
         time_row = time.time()
         dataset = row["dataset"]
         lineage = row["dataset_lineage"]
+        DOI = row["DOI"]
         CL = row["ontology_label"]
         logging.info(f"Dataset: '{dataset}'. Lineage '{lineage}'. Ontology '{CL}'")
-        
+
         # read loom output from AUCell
         auc_outpout = row["AUCell"]
         logging.info(f"Reading AUCell output: '{auc_outpout}'")
-        lf = lp.connect(auc_outpout , mode='r', validate=False)
-        
+        lf = lp.connect(auc_outpout, mode="r", validate=False)
+
         # create dataframe
         # some examples at https://github.com/aertslab/pySCENIC/issues/352
         df = pd.DataFrame(lf.ra.Regulons, index=lf.ra.Gene)
@@ -132,34 +132,48 @@ def main():
         logging.info(f"Total Genes in file: {df.shape[0]}")
 
         # remove genes that don't match any regulon — why are those here tho?
-        df = df.loc[~(df==0).all(axis=1)]
+        df = df.loc[~(df == 0).all(axis=1)]
         logging.info(f"Genes after filtering: {df.shape[0]}")
 
         # insert all nodes first
         logging.info(f"Inserting nodes (TF and genes)")
         # - all transcription factors
-        for TF in sorted(list(set([k[:-3] for k in lf.ra.Regulons.dtype.fields.keys()]))):
+        for TF in sorted(
+            list(set([k[:-3] for k in lf.ra.Regulons.dtype.fields.keys()]))
+        ):
             if TF not in nodes:
                 props = {"is_TF": True}
-                cursor.execute("INSERT INTO nodes (name, properties) VALUES (?,?)", [TF, json.dumps(props)])
+                cursor.execute(
+                    "INSERT INTO nodes (name, properties) VALUES (?,?)",
+                    [TF, json.dumps(props)],
+                )
                 nodes[TF] = cursor.lastrowid
             else:
                 # if symbol was already inserted but as 'gene' instead of TF update record to be TF (is_TF = True)
-                node = cursor.execute("SELECT id, properties FROM nodes WHERE id = ? AND properties->>'is_TF' = 0", [nodes[TF]]).fetchone()
+                node = cursor.execute(
+                    "SELECT id, properties FROM nodes WHERE id = ? AND properties->>'is_TF' = 0",
+                    [nodes[TF]],
+                ).fetchone()
                 if node:
                     props = json.loads(node[1])
                     props["is_TF"] = True
-                    cursor.execute("UPDATE nodes SET properties = ? WHERE id = ?", [json.dumps(props), node[0]])
-                
+                    cursor.execute(
+                        "UPDATE nodes SET properties = ? WHERE id = ?",
+                        [json.dumps(props), node[0]],
+                    )
+
         # - all genes
         for gene in lf.ra.Gene:
             if gene not in nodes:
                 props = {"is_TF": False}
-                cursor.execute("INSERT INTO nodes (name, properties) VALUES (?,?)", [gene, json.dumps(props)])
+                cursor.execute(
+                    "INSERT INTO nodes (name, properties) VALUES (?,?)",
+                    [gene, json.dumps(props)],
+                )
                 nodes[gene] = cursor.lastrowid
         logging.info(f"Done inserting nodes")
 
-        # read additional analysis for this dataset/lineage        
+        # read additional analysis for this dataset/lineage
         if FETCH_COEXPRESION:
             GRNBoost_path = row["GRNBoost"]
             logging.info(f"Reading GRNBoost from file: '{GRNBoost_path}'")
@@ -167,32 +181,28 @@ def main():
 
         # preprocess cisTopic horrible output where motifs is an array of tuples per row in the file
         # but it's a string so it's converted to list eval(motifs) and then fattened into a single list
-        if FETHC_MOTIF_EXPRESION:
+        if FETHC_MOTIF_ENRICHMENT:
             cisTarget_path = row["cisTarget"]
             logging.info(f"Reading cisTarget from file: '{cisTarget_path}'")
-            cisTarget = pd.read_csv(cisTarget_path,index_col=False, usecols=[0,8], names=["TF","motifs"], skiprows=3)
-            cisTarget = cisTarget.groupby("TF").apply(lambda x: 
-                pd.DataFrame(
-                    [item for sublist in map(eval,x['motifs']) for item in sublist],
-                    columns=["target","enrichment"])
-                .groupby("target",as_index=False)
-                .max()
-                .set_index('target')
-            )
+            cisTarget = load_signatures(cisTarget_path)
 
         logging.info(f"Inserting edges")
         # transverse the columns (tf) and the matching rows (genes) to insert edges
         for label, content in df.items():
-            genes = content[content==1].index.values
+            genes = content[content == 1].index.values
             logging.info(f"Inserting TF '{label}' ({len(genes)} genes)")
             rname = label[:-3]
             regulation = label[-2:-1]
-            
+
             # filter GRNBoost and cisTarget using the TF
             if FETCH_COEXPRESION:
                 TF_GRNBoost = GRNBoost.query(f"TF=='{rname}'")
-            if FETHC_MOTIF_EXPRESION:
-                TF_cisTarget = cisTarget.query(f"TF=='{rname}'")
+            if FETHC_MOTIF_ENRICHMENT:
+                TF_cisTarget = [tf for tf in cisTarget if tf.name == label]
+                if len(TF_cisTarget) > 1:
+                    logging.warning(
+                        f"Regulon {label} is present more than once in cisTarget result?"
+                    )
 
             for gene in genes:
                 # the following two lookups (GRNboosst and cisTarget) take too long and should be optimized?
@@ -201,35 +211,81 @@ def main():
                 if FETCH_COEXPRESION and not TF_GRNBoost.empty:
                     gene_GRNBoost = TF_GRNBoost.query(f"target=='{gene}'")
                     if not gene_GRNBoost.empty:
-                        coexpresion = gene_GRNBoost['importance'].values[0]
+                        coexpresion = gene_GRNBoost["importance"].values[0]
                 # - get cisTarget motif enrichment for gene
-                motif_expresion = 0
-                if FETHC_MOTIF_EXPRESION and not TF_cisTarget.empty:
-                    gene_cisTarget = TF_cisTarget.query(f"target=='{gene}'") 
-                    if not gene_cisTarget.empty:
-                        motif_expresion = gene_cisTarget['enrichment'].values[0]
-                
+                motif_enrichment = 0
+                if FETHC_MOTIF_ENRICHMENT and len(TF_cisTarget):
+                    motif_enrichment = cisTarget[0].gene2weight.get(gene, 0)
+
                 # build edge properties json
                 props = {
                     "regulation": regulation,
                     "coexpresion": coexpresion,
-                    "motif_expresion": motif_expresion,
+                    "motif_enrichment": motif_enrichment,
                     "dataset": dataset,
+                    "doi": DOI,
                     "lineage": lineage,
-                    "cell_label": CL
+                    "cell_label": CL,
                 }
-                cursor.execute("INSERT INTO edges (source_id, target_id, properties) VALUES (?,?,?)", [nodes[rname], nodes[gene], json.dumps(props)])
+                cursor.execute(
+                    "INSERT INTO edges (source_id, target_id, properties) VALUES (?,?,?)",
+                    [nodes[rname], nodes[gene], json.dumps(props)],
+                )
 
         logging.info(f"Committing transaction")
         connection.commit()
-        
-        logging.info(f"Done in {time.strftime('%Hh%Mm%Ss', time.gmtime(time.time()-time_row))}")
-    
+
+        logging.info(
+            f"Done in {time.strftime('%Hh%Mm%Ss', time.gmtime(time.time()-time_row))}"
+        )
+
     cursor.close()
     connection.close()
-    logging.info(f"Done in {time.strftime('%Hh%Mm%Ss', time.gmtime(time.time()-time_process))}")
+    logging.info(
+        f"Done in {time.strftime('%Hh%Mm%Ss', time.gmtime(time.time()-time_process))}"
+    )
+
+
+def is_valid_manifest():
+    if not os.path.isfile(RESULTS_MANIFEST):
+        logging.error(f"Missing manifest file '{RESULTS_MANIFEST}'")
+        return False
+
+    df = pd.read_csv(RESULTS_MANIFEST, index_col=False)
+
+    logging.info(f"Validating columns")
+    result = True
+    for col in [
+        "dataset",
+        "doi",
+        "dataset_lineage",
+        "ontology_label",
+        "AUCell",
+        "GRNBoost",
+        "cisTarget",
+    ]:
+        if col not in df.columns:
+            result = False
+            logging.error(f"Missing column '{col}' in manifest")
+    if not result:
+        return False
+
+    result = True
+    logging.info(f"Validating manifestfile references")
+    for _, row in df.iterrows():
+        if not os.path.isfile(row["AUCell"]):
+            result = False
+            logging.error(f"Missing file for AUCell {row['AUCell']}")
+        if not os.path.isfile(row["GRNBoost"]):
+            result = False
+            logging.error(f"Missing file for GRNBoost {row['GRNBoost']}")
+        if not os.path.isfile(row["cisTarget"]):
+            result = False
+            logging.error(f"Missing file for cisTarget {row['cisTarget']}")
+    return result
 
 
 if __name__ == "__main__":
+    assert is_valid_manifest() == True, "Found missing input files. Abort."
     create_db()
     main()
