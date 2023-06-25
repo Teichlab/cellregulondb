@@ -19,3 +19,4 @@ dependencies = [ "pandas", "requests", "rich", "networkx" ]
 
 [project.urls]
 Source = "https://github.com/Teichlab/cellregulondb"
+Home = "https://github.com/Teichlab/cellregulondb"
