@@ -4,7 +4,6 @@ import json
 import pickle
 import logging
 import sqlite3
-import requests
 import pandas as pd
 import networkx as nx
 
@@ -151,7 +150,7 @@ class CellRegulonDB:
             columns=[
                 "TF",
                 "gene",
-                "regulaqtion",
+                "regulation",
                 "coexpresion",
                 "motif_enrichment",
                 "cell_label",
@@ -299,28 +298,70 @@ class CellRegulonDB:
         pass
 
 
-def download_db(db_path:str=None, version:str="latest"):
+def download_db(db_path: str = None, version: str = "latest") -> str:
+    """
+    Downloads a CellRegulon database file.
+
+    Args:
+        db_path (str, optional): Path to save the downloaded database file. If not provided, the file will be saved as "cellregulon-vXXX.db" in the current directory. Defaults to None.
+        version (str, optional): Version of the CellRegulon database to download. Defaults to "latest".
+
+    Returns:
+        str: Path to the downloaded database file.
+
+    Raises:
+        Exception: If the specified version is not available.
+
+    """
+    import requests
+    from rich.progress import (
+        BarColumn,
+        DownloadColumn,
+        Progress,
+        TimeRemainingColumn,
+        TransferSpeedColumn,
+    )
+
+    progress_columns = (
+        "[progress.description]{task.description}",
+        BarColumn(),
+        TimeRemainingColumn(),
+        DownloadColumn(),
+        TransferSpeedColumn(),
+    )
+
     # get avaiable versions
     versions_url = "https://cellregulondb.cog.sanger.ac.uk/db/versions.json"
     data = requests.get(versions_url).json()
-    if version=="latest":
+    if version == "latest":
         version = data["latest"]
     required_version = [db for db in data["versions"] if version == db["version"]]
 
     # sanity check the version exists
     if not required_version:
-        raise Exception(f"Wrong verision number. Avaiable versions: {[db['version'] for db in data['versions']]}")
-    
-    required_version = required_version[0]
+        raise Exception(
+            f"Wrong verision number. Avaiable versions: {[db['version'] for db in data['versions']]}"
+        )
+
+    selected = required_version[0]
     if not db_path:
-        db_path = f"cellregulon-v{required_version['version']}.db"
-    
-    # download database
-    CHUNK = 16 * 1024 * 1024
-    print(f"Downloading {required_version['url']} as {db_path}")
-    r = requests.get(required_version['url'], allow_redirects=True)
-    open(db_path, 'wb').write(r.content)
+        db_path = f"cellregulon-v{selected['version']}.db"
 
-    return db_path
+    if os.path.isfile(db_path):
+        logging.warning(
+            f"Database file '{db_path}' already exists. Will be overwritten."
+        )
 
-
+    with requests.get(selected["url"], allow_redirects=True, stream=True) as r:
+        r.raise_for_status()
+        content_length = int(r.headers.get("Content-Length"))
+        logging.info(f"Downloading database verssion {selected['version']}")
+        with Progress(*progress_columns) as progress:
+            task = progress.add_task(
+                f"downloading v{selected['version']}", total=content_length
+            )
+            with open(db_path, "wb") as f:
+                for chunk in r.iter_content(chunk_size=5 * 1024**2):
+                    progress.advance(task, f.write(chunk))
+            logging.info(f"Downloaded {db_path}")
+            return db_path
