@@ -1,13 +1,18 @@
-from typing import Union
+from typing import Union, Tuple
 import os
 import json
 import pickle
+import difflib
+from tqdm import tqdm
 import logging
 import sqlite3
 import pandas as pd
+import numpy as np
 import networkx as nx
 
 logging.basicConfig(level="INFO", format="[%(asctime)s][%(levelname)s] %(message)s")
+
+sqlite3.register_adapter(np.int64, lambda val: int(val))
 
 
 class CellRegulonDB:
@@ -19,7 +24,10 @@ class CellRegulonDB:
 
     Attributes:
         db (sqlite3.Connection): Connection to the SQLite database.
-        TF (pandas.DataFrame): DataFrame containing information about transcription factors (TFs).
+        genes (pandas.DataFrame): DataFrame containing information about genes in the database.
+        lineages (pandas.DataFrame): DataFrame containing information about lineages in the database.
+        tissues (pandas.DataFrame): DataFrame containing information about tissues in the database.
+        cell_types (pandas.DataFrame): DataFrame containing information about cell_types in the database.
     """
 
     def __init__(self, db_path: str):
@@ -34,151 +42,100 @@ class CellRegulonDB:
 
         """
         if not os.path.isfile(db_path):
-            raise Exception(f"Invalid file '{db_path}'")
+            raise SystemExit(f"Invalid database file '{db_path}'")
         self.db = sqlite3.connect(db_path)
-        self.TFs = self._build_TF_dataframe()
-        self.lineages = self._get_lineages()
 
-    def _get_lineages(self) -> pd.DataFrame:
-        rows = self.db.execute(
-            "select distinct properties->>'cell_label' from edges"
-        ).fetchall()
-        return pd.DataFrame([row[0] for row in rows], columns=["lineage"])
+        self.lineages = pd.read_sql("select * from lineages", self.db)
+        self.tissues = pd.read_sql("select * from tissues", self.db)
+        self.cell_types = pd.read_sql("select * from cell_types", self.db)
+        self.genes = pd.read_sql("select * from nodes", self.db)
 
-    def _build_TF_dataframe(self) -> pd.DataFrame:
-        """
-        Builds a DataFrame containing information about transcription factors (TFs) from the database.
-
-        Returns:
-            pandas.DataFrame: DataFrame containing TF information.
-
-        """
-        rows = self.db.execute(
-            """
-            select name, properties 
-            from nodes where properties->>'is_TF'=1
-            """
-        ).fetchall()
-
-        return pd.DataFrame.from_records(
-            [
-                self._get_symbol_info(row[0], json.loads(row[1])).values()
-                for row in rows
-            ],
-            columns=["TF", "ENS", "chromosome", "start", "end"],
-        )
-
-    def location_search(
+    def get_regulons(
         self,
-        chromosome: str,
-        location: int = None,
-        start: int = None,
-        end: int = None,
-        delta: int = 10000,
+        genes: list = [],
+        cell_types: list = [],
+        tissues: list = [],
+        genes_are_transcription_factors: bool = False,
     ) -> pd.DataFrame:
         """
-        Searches for transcription factors based on location information.
+        Retrieves the regulon for one or more transcription factors.
 
         Args:
-            chromosome (str): Chromosome name.
-            location (int, optional): Specific location to search for the start of the transcription factors. Defaults to None.
-            start (int, optional): Start position of the range to search for transcription factors. Defaults to None.
-            end (int, optional): End position of the range to search for transcription factors. Defaults to None.
-            delta (int, optional): Delta value used for range search. Defaults to 10000 (+/-10kb).
-
-        Returns:
-            pandas.DataFrame: DataFrame containing the matching transcription factors.
-
-        Raises:
-            Exception: If neither 'location' nor 'start' and 'end' are provided.
-
-        """
-        chromosome = str(chromosome)
-
-        if location is not None:
-            return self.TFs[
-                (location >= self.TFs["start"] - delta)
-                & (location <= self.TFs["start"] + delta)
-                & (self.TFs["chromosome"] == chromosome)
-            ]
-        elif start is not None and end is not None:
-            return self.TFs[
-                (end >= self.TFs["start"] - delta)
-                & (start <= self.TFs["start"] + delta)
-                & (self.TFs["chromosome"] == chromosome)
-            ]
-        else:
-            raise Exception("Required 'location' or 'start' and 'end'")
-
-    def _get_regulon(self, TF: str, lineage: list = None) -> pd.DataFrame:
-        """
-        Retrieves the regulon for a given transcription factor.
-
-        Args:
-            TF (str): Name of the transcription factors.
-            lineage (list, optional): List of cell lineages to filter the regulon. Defaults to None.
+            genes (list, optional): List of gene names. Defaults to None.
+            cell_types (list, optional): List of cell types to filter the regulon. Defaults to None.
+            tissues (list, optional): List of tissues to filter the regulon. Defaults to None.
 
         Returns:
             pandas.DataFrame: DataFrame containing the regulon information.
 
         """
-        regulon = []
-        rows = self.db.execute(
-            """
-            select s.name,t.name,e.properties
-            from edges as e, nodes as s, nodes as t
-            where s.id=e.source_id and t.id=e.target_id and s.name = ?
-            """,
-            [TF],
-        ).fetchall()
-        for row in rows:
-            data = json.loads(row[2])
-            if lineage is None or data["cell_label"] in lineage:
-                regulon.append(
-                    [
-                        row[0],
-                        row[1],
-                        data["regulation"],
-                        data["coexpresion"],
-                        data["motif_enrichment"],
-                        data["cell_label"],
-                        data["dataset"],
-                    ]
-                )
-        return pd.DataFrame(
-            regulon,
-            columns=[
-                "TF",
-                "gene",
-                "regulation",
-                "coexpresion",
-                "motif_enrichment",
-                "cell_label",
-                "dataset_source",
-            ],
-        )
 
-    def get_regulon(self, TF: Union[str, list], lineage: list = None) -> pd.DataFrame:
+        # match to database ids
+        gene_ids = self.genes[self.genes["name"].isin(genes)]["id"].values
+        cell_type_ids = self.cell_types[self.cell_types["label"].isin(cell_types)][
+            "id"
+        ].values
+        tissue_ids = self.tissues[self.tissues["label"].isin(tissues)]["id"].values
+
+        sql_details = f"""
+        SELECT  source.name as 'transcription_factor',
+                p.regulation,
+                target.name as 'target_gene',
+                t.label as tissue,
+                c.label as cell_type,
+                p.author_cell_type,
+                p.coexpression,
+                p.rss
+        FROM    nodes as source, nodes as target,
+                edges AS e, properties AS p,
+                tissues as t, cell_types as c
+        WHERE   1=1
+                AND source.id = e.source_id
+                AND target.id = e.target_id
+                AND e.id = p.edge_id 
+                AND p.tissue_id = t.id
+                AND p.cell_type_id = c.id
         """
-        Retrieves the regulon for one or more TFs.
 
-        Args:
-            TF (Union[str, list]): Name of the TF or list of TF names.
-            lineage (list, optional): List of cell lineages to filter the regulon. Defaults to None.
+        binds = []
+        where = " "
 
-        Returns:
-            pandas.DataFrame: DataFrame containing the regulon information.
+        if len(cell_type_ids) > 0:
+            conditions = []
+            for _id in cell_type_ids:
+                conditions.append(f" p.cell_type_id = ? ")
+                binds.append(_id)
+            where += f" AND ({ ' OR '.join(conditions) })"
 
+        if len(tissue_ids) > 0:
+            conditions = []
+            for _id in tissue_ids:
+                conditions.append(f" p.tissue_id = ? ")
+                binds.append(_id)
+            where += f" AND ({ ' OR '.join(conditions) })"
+
+        if len(gene_ids) > 0:
+            conditions = []
+            for _id in gene_ids:
+                if genes_are_transcription_factors:
+                    conditions.append(f" e.source_id = ? ")
+                    binds.append(_id)
+                else:
+                    conditions.append(f" ( e.source_id = ? OR e.target_id = ?) ")
+                    binds.extend([_id, _id])
+            where += f" AND ({ ' OR '.join(conditions) })"
+
+        df = pd.read_sql(sql_details + where, self.db, params=binds)
+        return df
+
+    def get_shared_genes(
+        self,
+        regulons: Union[list, pd.DataFrame],
+        transcription_factor_column: str = "transcription_factor",
+        target_gene_column: str = "target_gene",
+    ) -> list:
         """
-        if isinstance(TF, list):
-            regulons = pd.concat([self._get_regulon(tf, lineage) for tf in set(TF)])
-        else:
-            regulons = self._get_regulon(str(TF), lineage)
-        return regulons
-
-    def get_shared_genes(self, data: Union[list, pd.DataFrame]) -> list:
-        """
-        Retrieves the shared genes among multiple regulons.
+        Retrieves the shared genes amongst multiple regulons.
 
         Args:
             data (Union[list, pd.DataFrame]): List of transcription factors or a DataFrame containing regulon information.
@@ -187,39 +144,25 @@ class CellRegulonDB:
             list: A list containing the shared genes.
 
         """
-        if isinstance(data, list):
-            data = self.get_regulon(data)
-        regulons = data.groupby("TF")["gene"].apply(list)
-        return list(set.intersection(*[set(genes) for _, genes in regulons.items()]))
+        if isinstance(regulons, list):
+            regulons_df = self.get_regulons(
+                genes=regulons, genes_are_transcription_factors=True
+            )
+        regulons_df = regulons_df.groupby(transcription_factor_column)[
+            target_gene_column
+        ].apply(list)
+        intersection = set.intersection(
+            *[set(genes) for _, genes in regulons_df.items()]
+        )
 
-    def _get_symbol_info(self, symbol: str, attr: dict) -> dict:
-        """
-        Extracts relevant information from a node's attributes.
-
-        Args:
-            symbol (str): Name of the gene.
-            attr (dict): Dictionary containing symbol attributes.
-
-        Returns:
-            dict: Dictionary with extracted symbol information.
-
-        """
-        info = {"TF": symbol, "ENS": 0, "chromosome": 0, "start": 0, "end": 0}
-        if "symbol_information" in attr and attr["symbol_information"]:
-            _id = attr["symbol_information"]["id"]
-            _start = attr["symbol_information"]["start"]
-            _end = attr["symbol_information"]["end"]
-            _strand = attr["symbol_information"]["strand"]
-            _chromosome = attr["symbol_information"]["seq_region_name"]
-            info["ENS"] = _id
-            info["chromosome"] = _chromosome
-            info["start"] = _start if _strand == 1 else _end
-            info["end"] = _end if _strand == 1 else _start
-
-        return info
+        return self.genes[self.genes["name"].isin(intersection)]
 
     def to_networkx(
-        self, df: pd.DataFrame = None, source: str = "TF", target: str = "gene"
+        self,
+        df: pd.DataFrame = None,
+        source_name: str = "transcription_factor",
+        target_name: str = "target_gene",
+        filename: str = None
     ) -> nx.MultiDiGraph:
         """
         Converts the database to a NetworkX MultiDiGraph.
@@ -228,36 +171,44 @@ class CellRegulonDB:
             nx.MultiDiGraph: NetworkX MultiDiGraph representing the database.
 
         """
-        if df is None:
-            logging.warning(
-                "No df provided. Converting whole database to NetworkX MultiDiGraph. This operation will take a long time."
-            )
         # create graph
         G = nx.MultiGraph()
-        if df is None:
-            # read all nodes
-            nodes = self.db.execute("select id, name, properties from nodes").fetchall()
-            # add them to the graph
-            G.add_nodes_from([(n[1], json.loads(n[2])) for n in nodes])
 
-            # read all edges
-            edges = self.db.execute(
-                """
-                select s.name,t.name,e.properties
-                from edges e, nodes t, nodes s
-                where s.id=e.source_id and t.id=e.target_id
-                """
-            ).fetchall()
-            # add them to the graph
-            G.add_edges_from([(e[0], e[1], json.loads(e[2])) for e in edges])
-        else:
-            G.add_edges_from(
-                [
-                    (data[source], data[target], data.to_json(orient="columns"))
-                    for _, data in df.iterrows()
-                ]
-            )
+        # add all gemes to the graph
+        logging.info("Collecting nodes")
+        G.add_nodes_from(
+            [(g.name, g) for g in tqdm(self.genes.itertuples(index=False))]
+        )
 
+        # read all edges
+        sql = """
+            SELECT  source.name as 'transcription_factor',
+                    p.regulation,
+                    target.name as 'target_gene',
+                    t.label as tissue,
+                    c.label as cell_type,
+                    p.author_cell_type,
+                    p.coexpression,
+                    p.rss
+            FROM    nodes as source, nodes as target,
+                    edges AS e, properties AS p,
+                    tissues as t, cell_types as c
+            WHERE   1=1
+                    AND source.id = e.source_id
+                    AND target.id = e.target_id
+                    AND e.id = p.edge_id 
+                    AND p.tissue_id = t.id
+                    AND p.cell_type_id = c.id
+        """
+        df = pd.read_sql(sql, self.db)
+        # add them to the graph
+        logging.info("Collecting edges")
+        G.add_edges_from(
+            [
+                (e.transcription_factor, e.target_gene, e)
+                for e in tqdm(df.itertuples(index=False))
+            ]
+        )
         return G
 
     def save_networkx(G, path: str = "cellregulon.nx") -> None:
@@ -271,31 +222,31 @@ class CellRegulonDB:
             G = pickle.load(f)
         return G
 
-    def to_cytosscape(self, df: pd.DataFrame, name: str = "cytoscape.txt") -> None:
-        """
-        Exports the database to a Cytoscape-readable file.
+    # def to_cytosscape(self, df: pd.DataFrame, name: str = "cytoscape.txt") -> None:
+    #     """
+    #     Exports the database to a Cytoscape-readable file.
 
-        Args:
-            name (str, optional): Name of the output file. Defaults to "cytoscape.txt".
+    #     Args:
+    #         name (str, optional): Name of the output file. Defaults to "cytoscape.txt".
 
-        """
-        # import networkx
-        # self.G.cytoscape_data
-        pass
+    #     """
+    #     # import networkx
+    #     # self.G.cytoscape_data
+    #     pass
 
-    def as_pyscenic(self, df: pd.DataFrame) -> "pySCENIC":
-        try:
-            import pyscenic
-        except ModuleNotFoundError:
-            raise Exception("Module 'pyscenic' is not installed.")
-        """
-        Converts the database to pySCENIC format.
+    # def as_pyscenic(self, df: pd.DataFrame) -> "pySCENIC":
+    #     try:
+    #         import pyscenic
+    #     except ModuleNotFoundError:
+    #         raise Exception("Module 'pyscenic' is not installed.")
+    #     """
+    #     Converts the database to pySCENIC format.
 
-        Returns:
-            pySCENIC?: pySCENIC representation of the database.
+    #     Returns:
+    #         pySCENIC?: pySCENIC representation of the database.
 
-        """
-        pass
+    #     """
+    #     pass
 
 
 def download_db(db_path: str = None, version: str = "latest") -> str:
