@@ -1,3 +1,4 @@
 __version__ = "0.1.0"
 
-from .cellregulon import CellRegulonDB, download_db
+from .cellregulondb import CellRegulonDB, download_db
+from .regulonatlas import RegulonAtlas
