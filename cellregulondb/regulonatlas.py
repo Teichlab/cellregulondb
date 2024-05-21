@@ -1,3 +1,6 @@
+from os import PathLike
+from typing import Union, List, Optional
+import numpy as np
 import scipy as sp
 import pandas as pd
 import scanpy as sc
@@ -23,8 +26,19 @@ class RegulonAtlas:
         perturbation_direction(gene_set: list): Placeholder method for calculating the perturbation direction of a gene set.
     """
 
-    def __init__(self, adata: sc.AnnData = None):
-        self.adata: sc.AnnData = adata
+    def __init__(self, adata: Optional[Union[sc.AnnData, str]] = None) -> None:
+        self.adata: sc.AnnData = (
+            adata if isinstance(adata, Union[sc.AnnData, None]) else sc.read_h5ad(adata)
+        )
+
+    def save(self, filename: PathLike) -> None:
+        """
+        Saves the data in `self.adata` to an .h5ad file.
+
+        Args:
+            filename (str): The name of the file to save the data to.
+        """
+        self.adata.write(filename)
 
     def load_from_df(self, df: pd.DataFrame) -> None:
         """
@@ -91,6 +105,106 @@ class RegulonAtlas:
         )
         ad_tf = ad_tf[ad_tf["value"] == 1].drop(columns="value")
         return ad_tf
+
+    def get_target_genes(
+        self, regulons: list = None, min_regulon: int = 1, top: int = None
+    ) -> list:
+        """
+        Returns the target genes in the regulon data.
+
+        Computes a list of target genes that are present in at least `min_regulon` regulons.
+        If `top` is provided, it returns the top `top` target genes by frequency.
+
+        Args:
+            regulons (list, optional): A list of regulons to consider. If None, all regulons are considered. Defaults to None.
+            min_regulon (int, optional): The minimum number of regulons a target gene should be present in. Defaults to 1.
+            top (int, optional): The number of top target genes to return. Defaults to None.
+
+        Returns:
+            list: A list of target genes.
+        """
+        if regulons is None:
+            regulons = self.adata.obs_names.tolist()
+
+        # get target genes and their frequency
+        genes = self.adata[regulons, :].var.index
+        freq = np.array(self.adata[regulons, :].X.sum(axis=0)).flatten()
+
+        # sort genes by frequency
+        order = freq.argsort()[::-1]
+        genes, freq = genes[order], freq[order]
+
+        # filter genes by frequency
+        target_genes = genes[freq >= min_regulon].tolist()
+
+        # select top genes
+        if top:
+            target_genes = target_genes[:top]
+
+        return target_genes
+
+    def get_target_genes_by(
+        self,
+        by: Union[str, List[str]] = "leiden",
+        subset: str = None,
+        min_regulon: int = 1,
+        top: int = None,
+    ) -> dict:
+        """
+        Returns the target genes for each category in `by`.
+
+        This method groups the regulon data by the categories in `by` and computes the target genes for each group.
+        The target genes are computed using the `get_target_genes` method with the `min_regulon` and `top` parameters.
+        The results are returned as a dictionary where the keys are the categories in `by` and the values are the target genes.
+
+        Args:
+            by (list, optional): A list of categories (columns from `self.adata.obs`) to group the regulons by. Defaults to "leiden".
+            subset (str, optional): A query string to filter the data before grouping
+                (using `pandas.query(..., engine='python')` on `self.adata.obs`). Defaults to no filtering if None.
+            min_regulon (int, optional): The minimum number of regulons a target gene should be present in. Defaults to 1.
+            top (int, optional): The number of top target genes to return. Defaults to None.
+
+        Returns:
+            dict: A dictionary where the keys are the categories in `by` and the values are the target genes.
+        """
+        use_df = self.adata.obs.reset_index()
+        if subset:
+            use_df = use_df.query(subset, engine="python")
+
+        return (
+            use_df.groupby(by)
+            .apply(
+                lambda df: self.get_target_genes(
+                    regulons=df["regulon"].unique().tolist(),
+                    min_regulon=min_regulon,
+                    top=top,
+                ),
+            )
+            .to_dict()
+        )
+
+    def get_tf_dict(self, subset: str = "regulation == '+'", **kwargs) -> dict:
+        """
+        Returns a dictionary of transcription factors and their target genes.
+
+        This method is a convenience wrapper around the `get_target_genes_by` method,
+        grouping the regulon data by the 'transcription_factor' category. The resulting
+        dictionary has transcription factors as keys and their corresponding target genes as values.
+        By default, it filters the data to only activating regulons, using `subset="regulation == '+'"`.
+
+        Args:
+            subset (str, optional): A query string to filter the data before grouping
+                (using `pandas.query(filter, engine='python')` on `self.adata.obs`).
+                If `None`, no filtering is applied. Defaults to "regulation == '+'"
+                (returns activator regulons).
+            **kwargs: Additional keyword arguments to pass to the `get_target_genes_by` method.
+
+        Returns:
+            dict: A dictionary where the keys are transcription factors and the values are lists of target genes.
+        """
+        return self.get_target_genes_by(
+            by="transcription_factor", subset=subset, **kwargs
+        )
 
     def calculate_embedding(
         self, n_neighbors: int = 10, plot: bool = False, add_leiden: float = None
