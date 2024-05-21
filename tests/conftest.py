@@ -1,7 +1,8 @@
 import pytest
+import pandas as pd
 
 
 @pytest.fixture
-def db_path():
-    # Provide a sample database path
-    return "/Users/jp30/Downloads/cellregulon-v0.1.0.db"
+def regulon_df():
+    df = pd.read_csv("test_data/ionocyte_regulons.csv", index_col=0)
+    return df

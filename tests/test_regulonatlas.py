@@ -6,22 +6,10 @@ from cellregulondb.cellregulondb import CellRegulonDB
 from cellregulondb.regulonatlas import RegulonAtlas
 
 
-def test_get_regulons(db_path):
-    # Initialize CellRegulonDB object
-    cell_regulon_db = CellRegulonDB(db_path)
-
-    # Call get_regulons method
-    df = cell_regulon_db.get_regulons(cell_types=["ionocyte"])
-
-    # Assert that the returned object is a DataFrame
-    assert isinstance(
-        df, pd.DataFrame
-    ), "get_regulons method does not return a DataFrame"
-
-    # Check if the adata object is the same as the one returned by the method
-
+def test_get_regulons(regulon_df):
+    """Test if the regulon dataframe is correctly converted to anndata and back to a dataframe"""
     ra = RegulonAtlas()
-    ra.load_from_df(df)
+    ra.load_from_df(regulon_df)
 
     ad_tf = ra.get_df()
 
@@ -38,7 +26,7 @@ def test_get_regulons(db_path):
     assert (
         (
             ad_tf[check].sort_values(check).reset_index(drop=True)
-            == df[check].sort_values(check).reset_index(drop=True)
+            == regulon_df[check].sort_values(check).reset_index(drop=True)
         )
         .all()
         .all()
