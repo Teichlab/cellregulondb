@@ -1,6 +1,7 @@
 import warnings
 from os import PathLike
 from typing import Union, List, Optional
+from pathlib import Path
 import re
 import numpy as np
 import scipy as sp
@@ -82,7 +83,31 @@ class RegulonAtlas:
         Args:
             filename (str): The name of the file to save the data to.
         """
+        self.adata.uns["crdb"] = {
+            "cell_type_col": self.cell_type_col,
+            "tissue_col": self.tissue_col,
+            "transcription_factor_col": self.transcription_factor_col,
+        }
         self.adata.write(filename)
+
+    @classmethod
+    def load_from_file(cls, filename: Union[str, Path]) -> "RegulonAtlas":
+        """
+        Loads data from an .h5ad file into a new `RegulonAtlas` object.
+
+        Args:
+            filename (str, Path): The name of the file to load the data from.
+
+        Returns:
+            cellregulondb.RegulonAtlas: A new `RegulonAtlas` object containing the loaded data.
+        """
+        ra = cls(sc.read_h5ad(filename))
+        ra.cell_type_col = ra.adata.uns["crdb"]["cell_type_col"]
+        ra.tissue_col = ra.adata.uns["crdb"]["tissue_col"]
+        ra.transcription_factor_col = ra.adata.uns["crdb"]["transcription_factor_col"]
+        ra._check_columns()
+
+        return ra
 
     def load_from_df(self, df: pd.DataFrame) -> None:
         """
@@ -127,16 +152,14 @@ class RegulonAtlas:
         #     var=pd.DataFrame(index=val_df.columns.get_level_values("target_gene")),
         # )
 
-        # Create an anndata object from the DataFrame (efficiently)
+        # Create an anndata object from the DataFrame (more efficient)
         df = df.astype({"regulon": "category", "target_gene": "category"})
         row_idx, col_idx = (
             df["regulon"].cat.codes.values,
             df["target_gene"].cat.codes.values,
         )
-        X = sp.sparse.csr_matrix(([1] * len(row_idx), (row_idx, col_idx)))
-
         adata = sc.AnnData(
-            X=X,
+            X=sp.sparse.csr_matrix(([1] * len(row_idx), (row_idx, col_idx))),
             obs=pd.DataFrame(index=df["regulon"].cat.categories),
             var=pd.DataFrame(index=df["target_gene"].cat.categories),
         )
