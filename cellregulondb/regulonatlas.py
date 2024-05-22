@@ -100,7 +100,7 @@ class RegulonAtlas:
         regulons: Optional[Union[str, List[str], List[bool]]] = None,
         target_genes: Optional[Union[str, List[str], List[bool]]] = None,
         copy: bool = True,
-    ) -> 'RegulonAtlas':
+    ) -> "RegulonAtlas":
         """
         Subsets the data in `self.adata` based on the specified observations and variables.
 
@@ -212,6 +212,7 @@ class RegulonAtlas:
         if subset:
             use_df = use_df.query(subset, engine="python")
 
+        # TODO: option to return counts per gene instead of list
         return (
             use_df.groupby(by, observed=False)
             .apply(
@@ -393,7 +394,7 @@ class RegulonAtlas:
         Args:
             **kwargs: Additional keyword arguments to customize the plot. These arguments are passed to `sc.pl.umap`.
         """
-        kwargs = {
+        umap_kwargs = {
             "color": ["leiden", "celltype"]
             if "leiden" in self.adata.obs
             else "celltype",
@@ -402,11 +403,12 @@ class RegulonAtlas:
             "legend_loc": "on data",
             "legend_fontoutline": 3,
             "title": "CellRegulon regulons",
-        }.update(kwargs)
+        }
+        umap_kwargs.update(kwargs)
 
         sc.pl.umap(
             self.adata,
-            **kwargs,
+            **umap_kwargs,
         )
 
     def score_gene_set(
