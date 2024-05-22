@@ -1,3 +1,4 @@
+import warnings
 from os import PathLike
 from typing import Union, List, Optional
 import re
@@ -74,16 +75,37 @@ class RegulonAtlas:
             + df["tissue"]
         )
 
-        # Create an anndata object from the DataFrame
-        val_df = pd.DataFrame(
-            [1] * df.shape[0],
-            index=pd.MultiIndex.from_frame(df[["regulon", "target_gene"]]),
-        ).unstack(fill_value=0)
+        # append number to duplicate regulon names
+        if df["regulon"].duplicated().any():
+            warnings.warn(
+                "Duplicate regulon names detected. Appending numbers to duplicate names.",
+                category=Warning,
+            )
+            df["regulon"] = df["regulon"] + df.groupby("regulon").cumcount().astype(str)
+
+        # # Create an anndata object from the DataFrame
+        # val_df = pd.DataFrame(
+        #     [1] * df.shape[0],
+        #     index=pd.MultiIndex.from_frame(df[["regulon", "target_gene"]]),
+        # ).unstack(fill_value=0)
+        # adata = sc.AnnData(
+        #     X=sp.sparse.csr_matrix(val_df),
+        #     obs=pd.DataFrame(index=val_df.index.get_level_values("regulon")),
+        #     var=pd.DataFrame(index=val_df.columns.get_level_values("target_gene")),
+        # )
+
+        # Create an anndata object from the DataFrame (efficiently)
+        df = df.astype({"regulon": "category", "target_gene": "category"})
+        row_idx, col_idx = (
+            df["regulon"].cat.codes.values,
+            df["target_gene"].cat.codes.values,
+        )
+        X = sp.sparse.csr_matrix(([1] * len(row_idx), (row_idx, col_idx)))
 
         adata = sc.AnnData(
-            X=sp.sparse.csr_matrix(val_df),
-            obs=pd.DataFrame(index=val_df.index.get_level_values("regulon")),
-            var=pd.DataFrame(index=val_df.columns.get_level_values("target_gene")),
+            X=X,
+            obs=pd.DataFrame(index=df["regulon"].cat.categories),
+            var=pd.DataFrame(index=df["target_gene"].cat.categories),
         )
 
         # Add obs information to adata
