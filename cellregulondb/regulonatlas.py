@@ -34,6 +34,13 @@ class RegulonAtlas:
             adata if isinstance(adata, Union[sc.AnnData, None]) else sc.read_h5ad(adata)
         )
 
+    def __repr__(self) -> str:
+        n_regulons, n_genes = self.adata.shape
+        # n_tfs = self.adata.obs["transcription_factor"].nunique()
+        # n_tissues = self.adata.obs["tissue"].nunique()
+        n_celltypes = self.adata.obs["celltype"].nunique()
+        return f"RegulonAtlas object with {n_regulons} regulons, {n_celltypes} cell types and {n_genes} target genes."
+
     def save(self, filename: PathLike) -> None:
         """
         Saves the data in `self.adata` to an .h5ad file.
