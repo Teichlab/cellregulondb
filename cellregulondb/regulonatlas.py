@@ -175,7 +175,7 @@ class RegulonAtlas:
             use_df = use_df.query(subset, engine="python")
 
         return (
-            use_df.groupby(by)
+            use_df.groupby(by, observed=False)
             .apply(
                 lambda df: self.get_target_genes(
                     regulons=df["regulon"].unique().tolist(),
