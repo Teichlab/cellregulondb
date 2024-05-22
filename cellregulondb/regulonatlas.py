@@ -151,6 +151,7 @@ class RegulonAtlas:
             ],
             axis=1,
         )
+        adata.obs["n_genes"] = adata.X.sum(axis=1)
 
         # TODO: add gene information from the database to adata.var
         # TODO: add obsm information to adata for coexpression values
@@ -192,7 +193,12 @@ class RegulonAtlas:
         if copy:
             adata = adata.copy()
 
-        return self.__class__(adata)
+        ra = self.__class__(adata)
+        ra.cell_type_col = self.cell_type_col
+        ra.tissue_col = self.tissue_col
+        ra.transcription_factor_col = self.transcription_factor_col
+
+        return ra
 
     def get_df(self) -> pd.DataFrame:
         """
