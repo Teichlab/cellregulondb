@@ -73,19 +73,19 @@ class CellRegulonDB:
 
         # match to database ids
         if tissues is None:
-            tissue_ids = self.tissues["id"].values
+            tissue_ids = []
         else:
             tissue_ids = self.tissues[self.tissues["label"].isin(tissues)]["id"].values
 
         if cell_types is None:
-            cell_type_ids = self.cell_types["id"].values
+            cell_type_ids = []
         else:
             cell_type_ids = self.cell_types[self.cell_types["label"].isin(cell_types)][
                 "id"
             ].values
 
         if genes is None:
-            gene_ids = self.genes["id"].values
+            gene_ids = []
         else:
             gene_ids = self.genes[self.genes["name"].isin(genes)]["id"].values
 
