@@ -6,6 +6,8 @@ import scipy as sp
 import pandas as pd
 import scanpy as sc
 
+import cellregulondb
+
 
 class RegulonAtlas:
     """
@@ -92,6 +94,42 @@ class RegulonAtlas:
         # TODO: add obsm information to adata for coexpression values
 
         self.adata = adata
+
+    def subset(
+        self,
+        regulons: Optional[Union[str, List[str], List[bool]]] = None,
+        target_genes: Optional[Union[str, List[str], List[bool]]] = None,
+        copy: bool = True,
+    ) -> cellregulondb.RegulonAtlas:
+        """
+        Subsets the data in `self.adata` based on the specified observations and variables.
+
+        This method subsets the data in `self.adata` based on the specified observations and variables.
+        The observations and variables to subset by can be specified as a string or a list of strings.
+        If a string is provided, the data is subset by the unique values in the specified column.
+        If a list is provided, the data is subset by the unique values in all the specified columns.
+
+        Args:
+            regulons (str, list, optional): The observation column(s) to subset by. Defaults to None.
+            target_genes (str, list, optional): The variable column(s) to subset by. Defaults to None.
+            copy (bool, optional): Whether to return a copy of the subsetted data. Defaults to True.
+
+        Returns:
+            cellregulondb.RegulonAtlas: A new RegulonAtlas object containing the subsetted data.
+        """
+        adata = self.adata
+        if regulons:
+            if isinstance(regulons, str):
+                regulons = [regulons]
+            adata = adata[regulons, :]
+        if target_genes:
+            if isinstance(target_genes, str):
+                target_genes = [target_genes]
+            adata = adata[:, target_genes]
+        if copy:
+            adata = adata.copy()
+
+        return RegulonAtlas(adata)
 
     def get_df(self) -> pd.DataFrame:
         """
