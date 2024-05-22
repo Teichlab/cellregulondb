@@ -268,6 +268,51 @@ class RegulonAtlas:
 
         return cell_type_matches
 
+    def find_regulons(
+        self,
+        target_genes: Union[list, str] = None,
+        target_genes_mode: str = "any",
+        subset: str = None,
+    ) -> pd.DataFrame:
+        """
+        Finds regulons based on which target genes they regulate or other meta information.
+
+        This method takes a list of target genes and returns a DataFrame containing regulons that are associated with these genes.
+        If `target_genes_mode` is set to 'any', it returns regulons that are associated with any of the target genes.
+        If `target_genes_mode` is set to 'all', it returns regulons that are associated with all the target genes.
+        If `target_genes` is None, it returns all regulons in the data.
+        The method can also filter the regulons based on a query string `subset` that is applied to `self.adata.obs`.
+
+        Args:
+            target_genes (list, str, optional): A list of target genes to search for. If None, returns all regulons. Defaults to None.
+            target_genes_mode (str, optional): The mode to use when filtering regulons based on target genes. Can be 'any' or 'all'. Defaults to 'any'.
+            subset (str, optional): A query string to filter the regulons (using `pandas.query(subset, engine='python')` on `self.adata.obs`). Defaults to no filtering if None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing regulons and meta-information associated with the target genes.
+        """
+        if target_genes_mode not in ["any", "all"]:
+            raise ValueError(
+                f"target_genes_mode must be one of ['any', 'all'], got {target_genes_mode}"
+            )
+        if isinstance(target_genes, str):
+            target_genes = [target_genes]
+
+        if target_genes is None:
+            obs_df = self.adata.obs.copy()
+        else:
+            mask = (
+                self.adata[:, target_genes].X.sum(axis=1) > 0
+                if target_genes_mode == "any"
+                else self.adata[:, target_genes].X.sum(axis=1) == len(target_genes)
+            )
+            obs_df = self.adata[mask].obs.copy()
+
+        if subset:
+            obs_df = obs_df.query(subset, engine="python")
+
+        return obs_df
+
     def calculate_embedding(
         self, n_neighbors: int = 10, plot: bool = False, add_leiden: float = None
     ) -> None:
