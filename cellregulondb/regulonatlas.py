@@ -100,7 +100,7 @@ class RegulonAtlas:
         regulons: Optional[Union[str, List[str], List[bool]]] = None,
         target_genes: Optional[Union[str, List[str], List[bool]]] = None,
         copy: bool = True,
-    ) -> cellregulondb.RegulonAtlas:
+    ) -> 'RegulonAtlas':
         """
         Subsets the data in `self.adata` based on the specified observations and variables.
 
@@ -129,7 +129,7 @@ class RegulonAtlas:
         if copy:
             adata = adata.copy()
 
-        return RegulonAtlas(adata)
+        return self.__class__(adata)
 
     def get_df(self) -> pd.DataFrame:
         """
