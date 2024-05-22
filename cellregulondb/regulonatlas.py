@@ -168,7 +168,9 @@ class RegulonAtlas:
         Returns:
             dict: A dictionary where the keys are the categories in `by` and the values are the target genes.
         """
-        use_df = self.adata.obs.reset_index()
+        use_df = self.adata.obs.copy()
+        use_df["regulon"] = self.adata.obs_names.tolist()
+
         if subset:
             use_df = use_df.query(subset, engine="python")
 
