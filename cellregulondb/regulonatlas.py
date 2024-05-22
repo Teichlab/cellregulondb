@@ -57,19 +57,19 @@ class RegulonAtlas:
             ValueError: If any of the required columns are missing.
         """
         if self.cell_type_col not in self.adata.obs:
-            raise ValueError(
+            warnings.warn(
                 f"Column '{self.cell_type_col}' not found in `self.adata.obs`. "
                 f"Available columns: {self.adata.obs.columns.tolist()}, "
                 f"set `self.cell_type_col` to the correct column name."
             )
         if self.tissue_col not in self.adata.obs:
-            raise ValueError(
+            warnings.warn(
                 f"Column '{self.tissue_col}' not found in `self.adata.obs`. "
                 f"Available columns: {self.adata.obs.columns.tolist()}, "
                 f"set `self.tissue_col` to the correct column name."
             )
         if self.transcription_factor_col not in self.adata.obs:
-            raise ValueError(
+            warnings.warn(
                 f"Column '{self.transcription_factor_col}' not found in `self.adata.obs`. "
                 f"Available columns: {self.adata.obs.columns.tolist()}, "
                 f"set `self.transcription_factor_col` to the correct column name."
