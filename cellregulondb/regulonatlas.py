@@ -109,12 +109,12 @@ class RegulonAtlas:
         )
 
         # append number to duplicate regulon names
-        if df["regulon"].duplicated().any():
+        if df[["regulon", "target_gene"]].duplicated().any():
             warnings.warn(
-                "Duplicate regulon names detected. Appending numbers to duplicate names.",
+                "Duplicate regulon-target pairs detected. Dropping duplicates.",
                 category=Warning,
             )
-            df["regulon"] = df["regulon"] + df.groupby("regulon").cumcount().astype(str)
+            df = df.drop_duplicates(subset=["regulon", "target_gene"])
 
         # # Create an anndata object from the DataFrame
         # val_df = pd.DataFrame(
