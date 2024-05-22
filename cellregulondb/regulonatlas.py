@@ -428,24 +428,29 @@ class RegulonAtlas:
             score_name (str, optional): The name of the column in `self.adata.obs` to store the scores. Defaults to "score".
             zscore (bool, optional): Whether to z-score normalize the scores. Defaults to True.
         """
-        sc.tl.score_genes(self.adata, gene_list=gene_set, score_name=score_name)
+        ad_q = self.adata.copy()
+        sc.tl.score_genes(ad_q, gene_list=gene_set, score_name=score_name)
+        self.adata.obs[score_name] = ad_q.obs[score_name].tolist()
+
         if zscore:
-            self.adata.obs[score_name] = (
+            n_score = (
                 self.adata.obs[score_name] - self.adata.obs[score_name].mean()
             ) / self.adata.obs[score_name].std()
+            self.adata.obs[score_name] = n_score.tolist()
 
     def plot_top_scores(
         self,
-        sort_by="score",
-        show_cat=None,
-        top=50,
-        search_comp=None,
-        search_data=None,
-        search_tiss=None,
-        search_cell=None,
-        search_tf=None,
-        space="free_x",
-        rotation=60,
+        sort_by: str = "score",
+        show_cat: list = None,
+        top: int = 50,
+        search_comp: list = None,
+        search_data: list = None,
+        search_tiss: list = None,
+        search_cell: list = None,
+        search_tf: list = None,
+        space: str = "free_x",
+        rotation: int = 60,
+        figsize: tuple = (15, 4),
     ) -> None:
         """
         Plots the top scoring regulons across various categories.
@@ -466,15 +471,20 @@ class RegulonAtlas:
             search_tf (list, optional): A list of transcription factors to filter the regulons by. Defaults to None.
             space (str, optional): The type of spacing to use for the plot. Defaults to "free_x".
             rotation (int, optional): The angle to rotate the x-axis labels by. Defaults to 60.
+            figsize (tuple, optional): The size of the figure. Defaults to (15, 8).
         """
         try:
             import plotnine as p9
+
         except ImportError:
             raise ImportError(
                 "The 'plotnine' package is required for this method. "
                 "Please install it using 'pip install plotnine' "
                 "or 'conda install -c conda-forge plotnine'."
             )
+
+        if figsize:
+            p9.options.figure_size = figsize
 
         if show_cat is None:
             show_cat = ["celltype", "tissue", "transcription_factor"]
@@ -505,8 +515,6 @@ class RegulonAtlas:
             df.sort_values(sort_by, ascending=False)["value"].unique().tolist()
         )
 
-        p9.options.figure_size = (15, 8)
-
         return (
             p9.ggplot(df, p9.aes(x="value", y=sort_by))
             + p9.geom_bar(stat="identity", fill="#3C5488FF")
@@ -517,7 +525,8 @@ class RegulonAtlas:
             + p9.theme_linedraw()
             + p9.theme(
                 axis_text_x=p9.element_text(angle=rotation, hjust=1),
-                strip_background=p9.element_rect(fill="white", colour="black", size=1),
+                strip_text=p9.element_text(color="white"),
+                strip_background=p9.element_rect(fill="black", colour="black", size=1),
                 panel_border=p9.element_rect(size=1),
             )
             + p9.xlab("")
