@@ -31,16 +31,49 @@ class RegulonAtlas:
     """
 
     def __init__(self, adata: Optional[Union[sc.AnnData, str]] = None) -> None:
+        self.cell_type_col = "celltype"
+        self.tissue_col = "tissue"
+        self.transcription_factor_col = "transcription_factor"
+
         self.adata: sc.AnnData = (
             adata if isinstance(adata, Union[sc.AnnData, None]) else sc.read_h5ad(adata)
         )
+
+        if self.adata is not None:
+            self._check_columns()
 
     def __repr__(self) -> str:
         n_regulons, n_genes = self.adata.shape
         # n_tfs = self.adata.obs["transcription_factor"].nunique()
         # n_tissues = self.adata.obs["tissue"].nunique()
-        n_celltypes = self.adata.obs["celltype"].nunique()
+        n_celltypes = self.adata.obs[self.cell_type_col].nunique()
         return f"RegulonAtlas object with {n_regulons} regulons, {n_celltypes} cell types and {n_genes} target genes."
+
+    def _check_columns(self) -> None:
+        """
+        Checks if the required columns are present in `self.adata.obs`.
+
+        Raises:
+            ValueError: If any of the required columns are missing.
+        """
+        if self.cell_type_col not in self.adata.obs:
+            raise ValueError(
+                f"Column '{self.cell_type_col}' not found in `self.adata.obs`. "
+                f"Available columns: {self.adata.obs.columns.tolist()}, "
+                f"set `self.cell_type_col` to the correct column name."
+            )
+        if self.tissue_col not in self.adata.obs:
+            raise ValueError(
+                f"Column '{self.tissue_col}' not found in `self.adata.obs`. "
+                f"Available columns: {self.adata.obs.columns.tolist()}, "
+                f"set `self.tissue_col` to the correct column name."
+            )
+        if self.transcription_factor_col not in self.adata.obs:
+            raise ValueError(
+                f"Column '{self.transcription_factor_col}' not found in `self.adata.obs`. "
+                f"Available columns: {self.adata.obs.columns.tolist()}, "
+                f"set `self.transcription_factor_col` to the correct column name."
+            )
 
     def save(self, filename: PathLike) -> None:
         """
@@ -123,6 +156,7 @@ class RegulonAtlas:
         # TODO: add obsm information to adata for coexpression values
 
         self.adata = adata
+        self._check_columns()
 
     def subset(
         self,
@@ -259,7 +293,7 @@ class RegulonAtlas:
         Returns a dictionary of transcription factors and their target genes.
 
         This method is a convenience wrapper around the `get_target_genes_by` method,
-        grouping the regulon data by the 'transcription_factor' category. The resulting
+        grouping the regulon data by the `self.transcription_factor_col` category. The resulting
         dictionary has transcription factors as keys and their corresponding target genes as values.
         By default, it filters the data to only activating regulons, using `subset="regulation == '+'"`.
 
@@ -274,12 +308,10 @@ class RegulonAtlas:
             dict: A dictionary where the keys are transcription factors and the values are lists of target genes.
         """
         return self.get_target_genes_by(
-            by="transcription_factor", subset=subset, **kwargs
+            by=self.transcription_factor_col, subset=subset, **kwargs
         )
 
-    def find_cell_types(
-        self, cell_types: list, cell_type_col: str = "celltype"
-    ) -> dict:
+    def find_cell_types(self, cell_types: list, cell_type_col: str = None) -> dict:
         """
         Finds string matches for a list of cell types in the regulon data with an adaptive strategy.
 
@@ -293,11 +325,14 @@ class RegulonAtlas:
 
         Args:
             cell_types (list): A list of cell types to search for.
-            cell_type_col (str, optional): The name of the column in `self.adata.obs` to search in. Defaults to "celltype".
+            cell_type_col (str, optional): The name of the column in `self.adata.obs` to search in. Defaults to `self.cell_type_col`.
 
         Returns:
             dict: A dictionary where the keys are the input cell types and the values are lists of matching cell types in the data.
         """
+        if cell_type_col is None:
+            cell_type_col = self.cell_type_col
+
         candidate_cts = self.adata.obs[cell_type_col].unique().tolist()
         cell_type_matches = {}
 
@@ -416,17 +451,17 @@ class RegulonAtlas:
         This method uses the UMAP embedding in `self.adata` (calculated by `calculate_embedding`).
         Additional keyword arguments are passed to `sc.pl.umap`.
 
-        By default, the 'leiden' and 'celltype' attributes are plotted if 'leiden' is present in `self.adata.obs`,
-        otherwise only 'celltype' is plotted. Default settings include edges, alpha 0.6, and plotting the legend
+        By default, the 'leiden' and `self.cell_type_col` attributes are plotted if 'leiden' is present in `self.adata.obs`,
+        otherwise only `self.cell_type_col` is plotted. Default settings include edges, alpha 0.6, and plotting the legend
         on top of the data (with an outline width of 3).
 
         Args:
             **kwargs: Additional keyword arguments to customize the plot. These arguments are passed to `sc.pl.umap`.
         """
         umap_kwargs = {
-            "color": ["leiden", "celltype"]
+            "color": ["leiden", self.cell_type_col]
             if "leiden" in self.adata.obs
-            else "celltype",
+            else self.cell_type_col,
             "edges": True,
             "alpha": 0.6,
             "legend_loc": "on data",
@@ -491,7 +526,8 @@ class RegulonAtlas:
 
         Args:
             sort_by (str, optional): The name of the column in `self.adata.obs` to sort the regulons by. Defaults to "score".
-            show_cat (list, optional): A list of categories to show in the plot. If None, defaults to ["celltype", "tissue", "transcription_factor"].
+            show_cat (list, optional): A list of categories to show in the plot. If None, defaults
+                to [`self.cell_type_col`, `self.tissue_col`, `self.transcription_factor_col`].
             top (int, optional): The number of top regulons to plot. Defaults to 50.
             search_comp (list, optional): A list of cell compartments to filter the regulons by. Defaults to None.
             search_data (list, optional): A list of datasets to filter the regulons by. Defaults to None.
@@ -516,7 +552,11 @@ class RegulonAtlas:
             p9.options.figure_size = figsize
 
         if show_cat is None:
-            show_cat = ["celltype", "tissue", "transcription_factor"]
+            show_cat = [
+                self.cell_type_col,
+                self.tissue_col,
+                self.transcription_factor_col,
+            ]
 
         plt_df = self.adata.obs
 
@@ -525,12 +565,16 @@ class RegulonAtlas:
         if search_data:
             plt_df = plt_df.query("dataset.isin(@search_data)", engine="python")
         if search_tiss:
-            plt_df = plt_df.query("tissue.isin(@search_tiss)", engine="python")
+            plt_df = plt_df.query(
+                f"{self.tissue_col}.isin(@search_tiss)", engine="python"
+            )
         if search_cell:
-            plt_df = plt_df.query("celltype.isin(@search_cell)", engine="python")
+            plt_df = plt_df.query(
+                f"{self.cell_type_col}.isin(@search_cell)", engine="python"
+            )
         if search_tf:
             plt_df = plt_df.query(
-                "transcription_factor.isin(@search_tf)", engine="python"
+                f"{self.transcription_factor_col}.isin(@search_tf)", engine="python"
             )
 
         df = plt_df[show_cat + [sort_by]].sort_values(sort_by, ascending=False)[:top]
