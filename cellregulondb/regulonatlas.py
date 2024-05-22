@@ -1,5 +1,6 @@
 from os import PathLike
 from typing import Union, List, Optional
+import re
 import numpy as np
 import scipy as sp
 import pandas as pd
@@ -205,6 +206,67 @@ class RegulonAtlas:
         return self.get_target_genes_by(
             by="transcription_factor", subset=subset, **kwargs
         )
+
+    def find_cell_types(
+        self, cell_types: list, cell_type_col: str = "celltype"
+    ) -> dict:
+        """
+        Finds string matches for a list of cell types in the regulon data with an adaptive strategy.
+
+        This method takes a list of cell types and searches for name matches with cell type in the regulon data.
+        Cell type names are broken down into alphanumeric fragments and matched in a case-insensitive manner.
+        If there are more than 20 hits for a query or the query is less than 3 characters long, searches for word matches instead.
+        If there are no hits, searches for partial matches.
+
+        The search is performed in the column specified by `cell_type_col`.
+        The results are returned as a dictionary where the keys are the input cell types and the values are lists of matching cell types in the data.
+
+        Args:
+            cell_types (list): A list of cell types to search for.
+            cell_type_col (str, optional): The name of the column in `self.adata.obs` to search in. Defaults to "celltype".
+
+        Returns:
+            dict: A dictionary where the keys are the input cell types and the values are lists of matching cell types in the data.
+        """
+        candidate_cts = self.adata.obs[cell_type_col].unique().tolist()
+        cell_type_matches = {}
+
+        for ct in cell_types:
+            ct_frags = [x for x in re.split("[^A-Za-z0-9]+", ct.lower()) if x != "cell"]
+            hits = [c for c in candidate_cts if all(f in c.lower() for f in ct_frags)]
+
+            if len(hits) > 20 or len(ct) < 3:
+                # unspecific hits
+                # look for word match
+                print(  # TODO: replace with logging
+                    f"too many hits ({len(hits)}) for query '{ct}', looking for word matches instead"
+                )
+                hits = [
+                    c
+                    for c in candidate_cts
+                    if all(
+                        f
+                        in [
+                            x
+                            for x in re.split("[^A-Za-z0-9]+", c.lower())
+                            if x != "cell"
+                        ]
+                        for f in ct_frags
+                    )
+                ]
+            elif len(hits) == 0:
+                # no hits
+                # look for partial matches
+                print(  # TODO: replace with logging
+                    f"no hits for query {ct}, looking for partial matches {ct_frags} instead"
+                )
+                hits = [
+                    c for c in candidate_cts if any(f in c.lower() for f in ct_frags)
+                ]
+
+            cell_type_matches[ct] = hits
+
+        return cell_type_matches
 
     def calculate_embedding(
         self, n_neighbors: int = 10, plot: bool = False, add_leiden: float = None
