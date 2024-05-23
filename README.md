@@ -1,3 +1,5 @@
+![cellregulondb](https://github.com/Teichlab/cellregulondb/actions/workflows/Tests.yml/badge.svg)
+
 # cellregulondb
 CellRegulon database code for downloading and analysing regulon data.
 
