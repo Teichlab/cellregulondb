@@ -43,7 +43,9 @@ def query_gprofiler(
     return sub_df
 
 
-def plot_enrichment(enr_df, n_terms: int = 10) -> None:
+def plot_enrichment(
+    enr_df, n_terms: int = 10, title: str = "", show: bool = False
+) -> plt.Figure:
     """
     Plots the enrichment results from g:Profiler.
 
@@ -54,6 +56,11 @@ def plot_enrichment(enr_df, n_terms: int = 10) -> None:
     Args:
         enr_df (pd.DataFrame): A DataFrame containing the enrichment results from g:Profiler.
         n_terms (int, optional): The number of top results to plot. Defaults to 10.
+        title (str, optional): The title of the plot. Defaults to "".
+        show (bool, optional): Whether to display the plot. Defaults to False.
+
+    Returns:
+        plt.Figure: The matplotlib Figure object containing the plot.
     """
     with plt.rc_context({"figure.figsize": (5, 10)}):
         enr_plt = enr_df[-n_terms:]
@@ -62,5 +69,9 @@ def plot_enrichment(enr_df, n_terms: int = 10) -> None:
             legend=False,
         )
         plt.subplots_adjust(left=0.5, right=0.9, top=0.9, bottom=0.1)
+        plt.title(title)
         plt.xlabel("-log(pval)")
-        plt.show()
+        if show:
+            plt.show()
+        else:
+            return plt.gcf()
