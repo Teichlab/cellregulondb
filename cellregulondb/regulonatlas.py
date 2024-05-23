@@ -34,9 +34,9 @@ class RegulonAtlas:
     def __init__(
         self, adata: Optional[Union[sc.AnnData, str]] = None, check: bool = True
     ) -> None:
-        self.cell_type_col = "celltype"
-        self.tissue_col = "tissue"
-        self.transcription_factor_col = "transcription_factor"
+        self._cell_type_col = "celltype"
+        self._tissue_col = "tissue"
+        self._transcription_factor_col = "transcription_factor"
 
         self.adata: sc.AnnData = (
             adata if isinstance(adata, Union[sc.AnnData, None]) else sc.read_h5ad(adata)
@@ -51,6 +51,36 @@ class RegulonAtlas:
         # n_tissues = self.adata.obs["tissue"].nunique()
         n_celltypes = self.adata.obs[self.cell_type_col].nunique()
         return f"RegulonAtlas object with {n_regulons} regulons, {n_celltypes} cell types and {n_genes} target genes."
+
+    @property
+    def cell_type_col(self):
+        return self._cell_type_col
+
+    @cell_type_col.setter
+    def cell_type_col(self, value):
+        if value not in self.adata.obs.columns:
+            raise ValueError(f"Column '{value}' not found in `self.adata.obs`.")
+        self._cell_type_col = value
+
+    @property
+    def tissue_col(self):
+        return self._tissue_col
+
+    @tissue_col.setter
+    def tissue_col(self, value):
+        if value not in self.adata.obs.columns:
+            raise ValueError(f"Column '{value}' not found in `self.adata.obs`.")
+        self._tissue_col = value
+
+    @property
+    def transcription_factor_col(self):
+        return self._transcription_factor_col
+
+    @transcription_factor_col.setter
+    def transcription_factor_col(self, value):
+        if value not in self.adata.obs.columns:
+            raise ValueError(f"Column '{value}' not found in `self.adata.obs`.")
+        self._transcription_factor_col = value
 
     def _check_columns(self) -> None:
         """
@@ -408,6 +438,9 @@ class RegulonAtlas:
         self,
         target_genes: Union[list, str] = None,
         target_genes_mode: str = "any",
+        cell_types: list = None,
+        transcription_factors: list = None,
+        tissues: list = None,
         subset: str = None,
     ) -> pd.DataFrame:
         """
@@ -422,11 +455,15 @@ class RegulonAtlas:
         Args:
             target_genes (list, str, optional): A list of target genes to search for. If None, returns all regulons. Defaults to None.
             target_genes_mode (str, optional): The mode to use when filtering regulons based on target genes. Can be 'any' or 'all'. Defaults to 'any'.
+            cell_types (list, optional): A list of cell types to filter the regulons by. Defaults to None.
+            transcription_factors (list, optional): A list of transcription factors to filter the regulons by. Defaults to None.
+            tissues (list, optional): A list of tissues to filter the regulons by. Defaults to None.
             subset (str, optional): A query string to filter the regulons (using `pandas.query(subset, engine='python')` on `self.adata.obs`). Defaults to no filtering if None.
 
         Returns:
             pd.DataFrame: A DataFrame containing regulons and meta-information associated with the target genes.
         """
+        # set arguments
         if target_genes_mode not in ["any", "all"]:
             raise ValueError(
                 f"target_genes_mode must be one of ['any', 'all'], got {target_genes_mode}"
@@ -434,6 +471,7 @@ class RegulonAtlas:
         if isinstance(target_genes, str):
             target_genes = [target_genes]
 
+        # filter by target genes
         if target_genes is None:
             obs_df = self.adata.obs.copy()
         else:
@@ -444,6 +482,17 @@ class RegulonAtlas:
             )
             obs_df = self.adata[mask].obs.copy()
 
+        # filter by cell types, transcription factors, and tissues
+        if cell_types:
+            obs_df = obs_df[obs_df[self.cell_type_col].isin(cell_types)]
+        if transcription_factors:
+            obs_df = obs_df[
+                obs_df[self.transcription_factor_col].isin(transcription_factors)
+            ]
+        if tissues:
+            obs_df = obs_df[obs_df[self.tissue_col].isin(tissues)]
+
+        # filter by additional metadata
         if subset:
             obs_df = obs_df.query(subset, engine="python")
 
