@@ -523,16 +523,16 @@ class RegulonAtlas:
                 n_neighbors=n_neighbors,
                 metric="jaccard",
             )
-            del self.adata.obsm["_X_dense"]
+            sc.tl.umap(self.adata)  # umap uses `use_rep` from neighbors
+            del self.adata.obsm["_X_dense"]  # delete to save ram
         else:
             sc.pp.neighbors(
                 self.adata, use_rep="X", n_neighbors=n_neighbors, metric="jaccard"
             )
+            sc.tl.umap(self.adata)
 
         if add_leiden:
             sc.tl.leiden(self.adata, resolution=add_leiden)
-
-        sc.tl.umap(self.adata)
 
         if plot:
             self.plot_embedding()
