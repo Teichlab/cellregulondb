@@ -31,7 +31,9 @@ class RegulonAtlas:
         perturbation_direction(gene_set: list): Placeholder method for calculating the perturbation direction of a gene set.
     """
 
-    def __init__(self, adata: Optional[Union[sc.AnnData, str]] = None) -> None:
+    def __init__(
+        self, adata: Optional[Union[sc.AnnData, str]] = None, check: bool = True
+    ) -> None:
         self.cell_type_col = "celltype"
         self.tissue_col = "tissue"
         self.transcription_factor_col = "transcription_factor"
@@ -40,7 +42,7 @@ class RegulonAtlas:
             adata if isinstance(adata, Union[sc.AnnData, None]) else sc.read_h5ad(adata)
         )
 
-        if self.adata is not None:
+        if self.adata is not None and check:
             self._check_columns()
 
     def __repr__(self) -> str:
@@ -101,7 +103,7 @@ class RegulonAtlas:
         Returns:
             cellregulondb.RegulonAtlas: A new `RegulonAtlas` object containing the loaded data.
         """
-        ra = cls(sc.read_h5ad(filename))
+        ra = cls(sc.read_h5ad(filename), check=False)
         ra.cell_type_col = ra.adata.uns["crdb"]["cell_type_col"]
         ra.tissue_col = ra.adata.uns["crdb"]["tissue_col"]
         ra.transcription_factor_col = ra.adata.uns["crdb"]["transcription_factor_col"]
