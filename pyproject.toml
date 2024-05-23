@@ -5,7 +5,10 @@ build-backend = "flit_core.buildapi"
 [project]
 name = "cellregulondb"
 description = "CellRegulon Database"
-authors = [{name = "Jan Patrick Prett", email = "jp30@sanger.ac.uk"}]
+authors = [
+    {name = "Jan Patrick Pett", email = "jp30@sanger.ac.uk"},
+    {name = "Martin Prete", email = "mp33@sanger.ac.uk"}
+]
 license = {file = "LICENSE"}
 readme = {file = "README.md", content-type="text/markdown"}
 classifiers = [
@@ -15,7 +18,7 @@ classifiers = [
 ]
 dynamic = ["version"]
 requires-python = ">=3.8"
-dependencies = [ "pandas", "requests", "rich", "tqdm", "networkx" ]
+dependencies = [ "pandas", "requests", "rich", "tqdm", "networkx", "scanpy", "igraph", "leidenalg" ]
 
 [project.urls]
 Source = "https://github.com/Teichlab/cellregulondb"

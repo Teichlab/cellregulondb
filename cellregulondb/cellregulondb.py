@@ -52,18 +52,19 @@ class CellRegulonDB:
 
     def get_regulons(
         self,
-        genes: list = [],
-        cell_types: list = [],
-        tissues: list = [],
+        genes: list = None,
+        cell_types: list = None,
+        tissues: list = None,
         genes_are_transcription_factors: bool = False,
     ) -> pd.DataFrame:
         """
-        Retrieves the regulon for one or more transcription factors.
+        Retrieves a pandas `DataFrame` of regulons based on several criteria.
 
         Args:
             genes (list, optional): List of gene names. Defaults to None.
             cell_types (list, optional): List of cell types to filter the regulon. Defaults to None.
             tissues (list, optional): List of tissues to filter the regulon. Defaults to None.
+            genes_are_transcription_factors (bool, optional): Whether the provided genes are transcription factors. Defaults to False.
 
         Returns:
             pandas.DataFrame: DataFrame containing the regulon information.
@@ -71,12 +72,24 @@ class CellRegulonDB:
         """
 
         # match to database ids
-        gene_ids = self.genes[self.genes["name"].isin(genes)]["id"].values
-        cell_type_ids = self.cell_types[self.cell_types["label"].isin(cell_types)][
-            "id"
-        ].values
-        tissue_ids = self.tissues[self.tissues["label"].isin(tissues)]["id"].values
+        if tissues is None:
+            tissue_ids = []
+        else:
+            tissue_ids = self.tissues[self.tissues["label"].isin(tissues)]["id"].values
 
+        if cell_types is None:
+            cell_type_ids = []
+        else:
+            cell_type_ids = self.cell_types[self.cell_types["label"].isin(cell_types)][
+                "id"
+            ].values
+
+        if genes is None:
+            gene_ids = []
+        else:
+            gene_ids = self.genes[self.genes["name"].isin(genes)]["id"].values
+
+        # assemble SQL query
         sql_details = f"""
         SELECT  source.name as 'transcription_factor',
                 p.regulation,
@@ -125,7 +138,9 @@ class CellRegulonDB:
                     binds.extend([_id, _id])
             where += f" AND ({ ' OR '.join(conditions) })"
 
+        # read SQL database and return as DataFrame
         df = pd.read_sql(sql_details + where, self.db, params=binds)
+
         return df
 
     def get_shared_genes(
@@ -148,9 +163,13 @@ class CellRegulonDB:
             regulons_df = self.get_regulons(
                 genes=regulons, genes_are_transcription_factors=True
             )
+        else:
+            regulons_df = regulons
+
         regulons_df = regulons_df.groupby(transcription_factor_column)[
             target_gene_column
         ].apply(list)
+
         intersection = set.intersection(
             *[set(genes) for _, genes in regulons_df.items()]
         )
@@ -162,7 +181,7 @@ class CellRegulonDB:
         df: pd.DataFrame = None,
         source_name: str = "transcription_factor",
         target_name: str = "target_gene",
-        filename: str = None
+        filename: str = None,
     ) -> nx.MultiDiGraph:
         """
         Converts the database to a NetworkX MultiDiGraph.
