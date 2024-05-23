@@ -249,7 +249,7 @@ class RegulonAtlas:
         if copy:
             adata = adata.copy()
 
-        ra = self.__class__(adata)
+        ra = self.__class__(adata, check=False)
         ra.cell_type_col = self.cell_type_col
         ra.tissue_col = self.tissue_col
         ra.transcription_factor_col = self.transcription_factor_col
