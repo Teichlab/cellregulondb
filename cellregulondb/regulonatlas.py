@@ -465,11 +465,24 @@ class RegulonAtlas:
             plot (bool, optional): Whether to plot the UMAP embeddings. Defaults to False.
             add_leiden (float, optional): Resolution for the Leiden clustering. If provided, Leiden clustering will be performed. Defaults to None.
         """
-        sc.pp.neighbors(
-            self.adata, use_rep="X", n_neighbors=n_neighbors, metric="jaccard"
-        )
+        # if "X" is sparse, temporarily save dense array in obsm for metric jaccard
+        if sp.sparse.issparse(self.adata.X):
+            self.adata.obsm["_X_dense"] = self.adata.X.A
+            sc.pp.neighbors(
+                self.adata,
+                use_rep="_X_dense",
+                n_neighbors=n_neighbors,
+                metric="jaccard",
+            )
+            del self.adata.obsm["_X_dense"]
+        else:
+            sc.pp.neighbors(
+                self.adata, use_rep="X", n_neighbors=n_neighbors, metric="jaccard"
+            )
+
         if add_leiden:
             sc.tl.leiden(self.adata, resolution=add_leiden)
+
         sc.tl.umap(self.adata)
 
         if plot:
