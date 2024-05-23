@@ -38,9 +38,10 @@ class RegulonAtlas:
         self._tissue_col = "tissue"
         self._transcription_factor_col = "transcription_factor"
 
-        self.adata: sc.AnnData = (
-            adata if isinstance(adata, Union[sc.AnnData, None]) else sc.read_h5ad(adata)
-        )
+        if adata is None or isinstance(adata, sc.AnnData):
+            self.adata: sc.AnnData = adata
+        else:
+            self.adata: sc.AnnData = sc.read_h5ad(adata)
 
         if self.adata is not None and check:
             self._check_columns()
