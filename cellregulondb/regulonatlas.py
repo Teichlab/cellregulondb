@@ -560,7 +560,6 @@ class RegulonAtlas:
             "alpha": 0.6,
             "legend_loc": "on data",
             "legend_fontoutline": 3,
-            "title": "CellRegulon regulons",
         }
         umap_kwargs.update(kwargs)
 
