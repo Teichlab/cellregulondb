@@ -17,3 +17,7 @@ Install from GitHub:
 ```sh
 pip install git+ssh://git@github.com/Teichlab/cellregulondb.git
 ```
+
+## Example notebooks
+
+- [download and basic analysis](https://github.com/Teichlab/cellregulondb/blob/main/docs/notebooks/crdb_example_notebook.ipynb)
