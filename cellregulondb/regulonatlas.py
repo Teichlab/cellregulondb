@@ -6,6 +6,7 @@ import re
 import numpy as np
 import scipy as sp
 import pandas as pd
+import networkx as nx
 import scanpy as sc
 
 import cellregulondb
@@ -371,6 +372,36 @@ class RegulonAtlas:
         """
         return self.get_target_genes_by(
             by=self.transcription_factor_col, subset=subset, **kwargs
+        )
+
+    def to_networkx(
+        self, regulons: list = None, target_genes: list = None, **kwargs
+    ) -> nx.DiGraph:
+        """
+        Converts the regulon data to a NetworkX graph.
+
+        This method converts the regulon data in `self.adata` to a directed NetworkX graph.
+        The nodes in the graph are the regulons and target genes, and the edges are the regulatory relationships between them.
+        The graph is directed from the transcription factors to the target genes.
+
+        Args:
+            regulons (list, optional): A list of regulons to include in the graph. If None, includes all regulons. Defaults to None.
+            target_genes (list, optional): A list of target genes to include in the graph. If None, includes all target genes. Defaults to None.
+
+        Returns:
+            nx.DiGraph: A NetworkX directed graph representing the regulon data.
+        """
+        if regulons is None:
+            regulons = self.adata.obs_names.tolist()
+        if target_genes is None:
+            target_genes = self.adata.var_names.tolist()
+
+        # create a directed NetworkX graph
+        return nx.from_dict_of_lists(
+            self.subset(regulons=regulons, target_genes=target_genes).get_tf_dict(
+                **kwargs
+            ),
+            create_using=nx.DiGraph,
         )
 
     def find_cell_types(self, cell_types: list, cell_type_col: str = None) -> dict:

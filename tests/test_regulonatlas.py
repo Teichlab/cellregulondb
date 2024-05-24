@@ -1,3 +1,4 @@
+import networkx as nx
 from cellregulondb.regulonatlas import RegulonAtlas
 
 
@@ -74,3 +75,33 @@ def test_get_tf_dict(regulon_df):
 
     for tf, tgs in tf_dict_df.items():
         assert set(tf_dict[tf]) == set(tgs), f"TF {tf} target genes do not match"
+
+
+def test_to_networkx(regulon_df):
+    """Test if the networkx graph is correctly created from the regulon dataframe"""
+
+    ra = RegulonAtlas()
+    ra.load_from_df(regulon_df)
+    ra.cell_type_col = "cell_type"
+
+    G = ra.to_networkx()
+
+    assert nx.is_directed(G), "graph is not directed"
+
+    # check if the graph can be converted back to dataframe
+    df = nx.to_pandas_edgelist(G)
+    assert (
+        (
+            df.sort_values(["source", "target"])
+            .rename(columns={"source": "transcription_factor", "target": "target_gene"})
+            .reset_index(drop=True)
+            == regulon_df.query("regulation == '+'")[
+                ["transcription_factor", "target_gene"]
+            ]
+            .drop_duplicates()
+            .sort_values(["transcription_factor", "target_gene"])
+            .reset_index(drop=True)
+        )
+        .all()
+        .all()
+    ), "dataframes before and after transformation to networkx are not equal"
