@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import scanpy as sc
+import networkx as nx
 import matplotlib.pyplot as plt
 
 
@@ -71,6 +72,80 @@ def plot_enrichment(
         plt.subplots_adjust(left=0.5, right=0.9, top=0.9, bottom=0.1)
         plt.title(title)
         plt.xlabel("-log(pval)")
+        if show:
+            plt.show()
+        else:
+            return plt.gcf()
+
+
+def plot_networkx(
+    nx_graph: nx.DiGraph,
+    title: str = "",
+    show: bool = False,
+    layout: str = "kamada-kawai",
+    figsize=(10, 10),
+    edge_label_kwargs: dict = None,
+    **kwargs,
+) -> plt.Figure:
+    """
+    Plots a networkx graph.
+
+    This method uses the `matplotlib` package to create a plot of the networkx graph.
+    The nodes are colored red if they are transcription factors and blue otherwise.
+
+    Args:
+        nx_graph (nx.DiGraph): A networkx DiGraph object to plot.
+        title (str, optional): The title of the plot. Defaults to "".
+        show (bool, optional): Whether to display the plot. Defaults to False.
+        layout (str, optional): The layout of the plot.
+            Options: ['kamada-kawai', 'circular', 'random', 'spring', 'shell', 'spectral'].
+            Defaults to "kamada-kawai".
+        figsize (tuple, optional): The size of the figure. Defaults to (10, 10).
+        edge_label_kwargs (dict, optional): Additional keyword arguments to pass to `nx.draw_networkx_edge_labels`.
+        **kwargs: Additional keyword arguments to pass to `nx.draw`.
+
+    Returns:
+        plt.Figure: The matplotlib Figure object containing the plot.
+    """
+    layouts = {
+        "kamada-kawai": nx.kamada_kawai_layout,
+        "circular": nx.circular_layout,
+        "random": nx.random_layout,
+        "spring": nx.spring_layout,
+        "shell": nx.shell_layout,
+        "spectral": nx.spectral_layout,
+    }
+    if layout not in layouts:
+        raise ValueError(
+            f"Invalid layout: {layout}. Choose from {list(layouts.keys())}"
+        )
+
+    draw_kwargs = {
+        "node_color": [
+            "bisque"
+            if "transcription_factor" in nx_graph.nodes[node]
+            and nx_graph.nodes[node]["transcription_factor"]
+            else "lightsteelblue"
+            for node in nx_graph.nodes
+        ],
+        "with_labels": True,
+    }
+    draw_kwargs.update(kwargs)
+
+    with plt.rc_context({"figure.figsize": figsize}):
+        pos = layouts[layout](nx_graph)
+        nx.draw(
+            nx_graph,
+            pos,
+            **draw_kwargs,
+        )
+        if edge_label_kwargs is not None:
+            nx.draw_networkx_edge_labels(
+                nx_graph,
+                pos,
+                **edge_label_kwargs,
+            )
+        plt.title(title)
         if show:
             plt.show()
         else:

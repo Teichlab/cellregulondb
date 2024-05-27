@@ -218,8 +218,9 @@ class RegulonAtlas:
 
     def subset(
         self,
-        regulons: Optional[Union[str, List[str], List[bool]]] = None,
+        regulons: Optional[Union[str, List[str], List[bool], pd.DataFrame]] = None,
         target_genes: Optional[Union[str, List[str], List[bool]]] = None,
+        shrink: bool = True,
         copy: bool = True,
     ) -> "RegulonAtlas":
         """
@@ -232,21 +233,27 @@ class RegulonAtlas:
 
         Args:
             regulons (str, list, optional): The observation column(s) to subset by. Defaults to None.
-            target_genes (str, list, optional): The variable column(s) to subset by. Defaults to None.
+            target_genes (str, list, optional): The variable column(s) to subset by. If all target genes should
+                be retained regardless of whether they are present in any regulon, also set `shrink=False`. Defaults to None.
+            shrink (bool, optional): Whether to remove target genes that are not present in any regulon. Defaults to True.
             copy (bool, optional): Whether to return a copy of the subsetted data. Defaults to True.
 
         Returns:
             cellregulondb.RegulonAtlas: A new RegulonAtlas object containing the subsetted data.
         """
         adata = self.adata
-        if regulons:
+        if regulons is not None:
             if isinstance(regulons, str):
                 regulons = [regulons]
+            elif isinstance(regulons, pd.DataFrame):
+                regulons = regulons.index.tolist()
             adata = adata[regulons, :]
-        if target_genes:
+        if target_genes is not None:
             if isinstance(target_genes, str):
                 target_genes = [target_genes]
             adata = adata[:, target_genes]
+        if shrink:
+            adata = adata[:, adata.X.sum(axis=0) > 0]
         if copy:
             adata = adata.copy()
 
@@ -272,7 +279,10 @@ class RegulonAtlas:
         return ad_tf
 
     def get_target_genes(
-        self, regulons: list = None, min_regulon: int = 1, top: int = None
+        self,
+        regulons: Optional[Union[str, List[str], List[bool], pd.DataFrame]] = None,
+        min_regulon: int = 1,
+        top: int = None,
     ) -> list:
         """
         Returns the target genes in the regulon data.
@@ -351,7 +361,9 @@ class RegulonAtlas:
             .to_dict()
         )
 
-    def get_tf_dict(self, subset: str = "regulation == '+'", **kwargs) -> dict:
+    def get_tf_dict(
+        self, min_regulon: int = 1, subset: str = "regulation == '+'", **kwargs
+    ) -> dict:
         """
         Returns a dictionary of transcription factors and their target genes.
 
@@ -361,6 +373,7 @@ class RegulonAtlas:
         By default, it filters the data to only activating regulons, using `subset="regulation == '+'"`.
 
         Args:
+            min_regulon (int, optional): The minimum number of regulons a target gene should be present in. Defaults to 1.
             subset (str, optional): A query string to filter the data before grouping
                 (using `pandas.query(filter, engine='python')` on `self.adata.obs`).
                 If `None`, no filtering is applied. Defaults to "regulation == '+'"
@@ -370,12 +383,17 @@ class RegulonAtlas:
         Returns:
             dict: A dictionary where the keys are transcription factors and the values are lists of target genes.
         """
-        return self.get_target_genes_by(
-            by=self.transcription_factor_col, subset=subset, **kwargs
-        )
+        kwargs.update(min_regulon=min_regulon, subset=subset)
+        return self.get_target_genes_by(by=self.transcription_factor_col, **kwargs)
 
     def to_networkx(
-        self, regulons: list = None, target_genes: list = None, **kwargs
+        self,
+        regulons: Optional[Union[str, List[str], List[bool], pd.DataFrame]] = None,
+        target_genes: list = None,
+        subset: str = "regulation == '+'",
+        min_regulon: int = 1,
+        min_degree_targets: int = None,
+        **kwargs,
     ) -> nx.DiGraph:
         """
         Converts the regulon data to a NetworkX graph.
@@ -387,6 +405,10 @@ class RegulonAtlas:
         Args:
             regulons (list, optional): A list of regulons to include in the graph. If None, includes all regulons. Defaults to None.
             target_genes (list, optional): A list of target genes to include in the graph. If None, includes all target genes. Defaults to None.
+            subset (str, optional): A query string to filter the data before creating the graph (using `pandas.query(filter, engine='python')` on `self.adata.obs`). Defaults to "regulation == '+'" (returns activator regulons).
+            min_regulon (int, optional): The minimum number of regulons a target gene should be present in. Defaults to 1.
+            min_degree_targets (int, optional): The minimum in-degree of target genes to include in the graph. Defaults to None.
+            **kwargs: Additional keyword arguments to pass to the `get_tf_dict` method.
 
         Returns:
             nx.DiGraph: A NetworkX directed graph representing the regulon data.
@@ -395,18 +417,34 @@ class RegulonAtlas:
             regulons = self.adata.obs_names.tolist()
         if target_genes is None:
             target_genes = self.adata.var_names.tolist()
+        kwargs.update(min_regulon=min_regulon, subset=subset)
 
         # create a directed NetworkX graph
-        return nx.from_dict_of_lists(
+        ra_nx = nx.from_dict_of_lists(
             self.subset(
                 regulons=regulons, target_genes=target_genes, copy=False
             ).get_tf_dict(**kwargs),
             create_using=nx.DiGraph,
         )
 
+        tfs = set(self.adata.obs[self.transcription_factor_col].values)
+        for node in ra_nx.nodes:
+            ra_nx.nodes[node]["transcription_factor"] = node in tfs
+
+        if min_degree_targets is not None:
+            remove = [
+                node
+                for node, degree in ra_nx.in_degree()
+                if degree < min_degree_targets
+                and not ra_nx.nodes[node]["transcription_factor"]
+            ]
+            ra_nx.remove_nodes_from(remove)
+
+        return ra_nx
+
     def get_tables(
         self,
-        regulons: list = None,
+        regulons: Optional[Union[str, List[str], List[bool], pd.DataFrame]] = None,
         target_genes: list = None,
         by: Union[str, List[str]] = None,
         node_columns: List[str] = None,
