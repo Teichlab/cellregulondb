@@ -105,3 +105,50 @@ def test_to_networkx(regulon_df):
         .all()
         .all()
     ), "dataframes before and after transformation to networkx are not equal"
+
+
+def test_get_tables(regulon_df):
+    """Test if the tables are correctly extracted from RegulonAtlas"""
+    regulon_df = regulon_df.assign(
+        cell_type_info=regulon_df["cell_type"].astype(str) + "_info"
+    )  # add cell type info column for testing
+
+    ra = RegulonAtlas()
+    ra.load_from_df(regulon_df)
+    ra.cell_type_col = "cell_type"
+
+    # test get_tables for transcription factors
+    links, regs, tgs = ra.get_tables(by=["transcription_factor"])
+    assert set(links["source"].tolist()) == set(
+        regulon_df["transcription_factor"].tolist()
+    ), "sources are not transcription factors"
+    assert set(links["target"].tolist()) == set(
+        regulon_df["target_gene"].tolist()
+    ), "targets are not target genes"
+    assert set(regs["source"].tolist()) == set(
+        regulon_df["transcription_factor"].tolist()
+    ), "regulon node attributes are not for transcription factors"
+    assert set(tgs["target"].tolist()) == set(
+        regulon_df["target_gene"].tolist()
+    ), "gene node attributes are not for target genes"
+
+    # test get_tables for (transcription factors, cell types)
+    links, regs, tgs = ra.get_tables(
+        by=["transcription_factor", "cell_type"], node_columns=["cell_type_info"]
+    )
+    parts = links["source"].str.split(" - ", expand=True)
+    assert set(parts[0].tolist()) == set(
+        regulon_df["transcription_factor"].tolist()
+    ), "part 1 of sources are not transcription factors"
+    assert set(parts[1].tolist()) == set(
+        regulon_df["cell_type"].tolist()
+    ), "part 2 of sources are not cell types"
+    assert set(links["target"].tolist()) == set(
+        regulon_df["target_gene"].tolist()
+    ), "targets are not target genes"
+    assert set(tgs["target"].tolist()) == set(
+        regulon_df["target_gene"].tolist()
+    ), "gene node attributes are not for target genes"
+    assert (
+        "cell_type_info" in regs.columns
+    ), "cell_type_info column not assigned to regulon attributes"

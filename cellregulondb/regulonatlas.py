@@ -1,6 +1,6 @@
 import warnings
 from os import PathLike
-from typing import Union, List, Optional
+from typing import Union, List, Tuple, Optional
 from pathlib import Path
 import re
 import numpy as np
@@ -398,11 +398,90 @@ class RegulonAtlas:
 
         # create a directed NetworkX graph
         return nx.from_dict_of_lists(
-            self.subset(regulons=regulons, target_genes=target_genes).get_tf_dict(
-                **kwargs
-            ),
+            self.subset(
+                regulons=regulons, target_genes=target_genes, copy=False
+            ).get_tf_dict(**kwargs),
             create_using=nx.DiGraph,
         )
+
+    def get_tables(
+        self,
+        regulons: list = None,
+        target_genes: list = None,
+        by: Union[str, List[str]] = None,
+        node_columns: List[str] = None,
+    ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        """
+        Returns the link and node tables for the regulon data.
+        (These could be used for export to a network visualization tool, such as Cytoscape.)
+
+        Returns three tables in total, a link table, a regulon node table, and a target gene node table.
+        IDs of source and target nodes will be in the "source" and "target" columns of the returned tables.
+        The link table contains both the source and target IDs.
+
+        A subset of the regulon atlas can be specified by providing lists of regulons and target genes in `regulons` and `target_genes`.
+
+        The source nodes of the tables can be set as combinations of columns in `self.adata.obs` by providing a list of column names in `by`.
+        For example, setting `by=["transcription_factor", "cell_type"]` will group the regulons by the unique combinations of transcription factors and cell types.
+        The IDs of the source nodes would then be "<transcription factor> - <cell type>".
+        If `by` is a single column name, such as "transcription_factor", the source nodes will be the unique values in that column.
+
+        Other columns from `self.adata.obs` will be grouped in lists and become columns of the link table.
+        The `node_columns` argument can be used to make them columns of the node tables instead.
+
+        Args:
+            regulons (list, optional): A list of regulons to include in the tables. If None, includes all regulons. Defaults to None.
+            target_genes (list, optional): A list of target genes to include in the tables. If None, includes all target genes. Defaults to None.
+            by (str, list, optional): The column(s) to group the regulons by. If None, will be `self.transcription_factor_col`. Defaults to None.
+            node_columns (list, optional): A list of columns from `self.adata.obs` to include in the node tables. If None, will be []. Defaults to None.
+
+        Returns:
+            Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]: A tuple containing the link table, regulon node table, and target gene node table.
+        """
+        if regulons is None:
+            regulons = self.adata.obs_names.tolist()
+        if target_genes is None:
+            target_genes = self.adata.var_names.tolist()
+        if by is None:
+            by = self.transcription_factor_col
+        if node_columns is None:
+            node_columns = []
+        if isinstance(by, str):
+            by = [by]
+
+        # get regulon-target gene pairs
+        regulon_df = self.subset(
+            regulons=regulons, target_genes=target_genes, copy=False
+        ).get_df()
+
+        # create link table
+        link_df = regulon_df.groupby(by + ["target_gene"]).apply(
+            lambda df: df.T.apply(list, axis=1)
+        )
+        link_df = link_df.drop(columns=by + ["target_gene"] + node_columns)
+        link_df = link_df.reset_index(level="target_gene").rename(
+            columns={"target_gene": "target"}
+        )
+
+        def join_proc(x):
+            x = [f"({s})" if re.match(r"[+-]", s) else s for s in x]
+            return " - ".join(x)
+
+        if len(by) > 1:
+            link_df.index = link_df.index.map(join_proc)  # join multi-index
+        link_df = link_df.rename_axis(index="source").reset_index()
+
+        # create node table (regulons)
+        reg_df = regulon_df.groupby(by).apply(lambda df: df.T.apply(list, axis=1))
+        reg_df = reg_df[node_columns]
+        if len(by) > 1:
+            reg_df.index = reg_df.index.map(join_proc)  # join multi-index
+        reg_df = reg_df.rename_axis(index="source").reset_index()
+
+        # create node table (target genes)
+        tg_df = self.adata.var.rename_axis(index="target").reset_index()
+
+        return link_df, reg_df, tg_df
 
     def find_cell_types(self, cell_types: list, cell_type_col: str = None) -> dict:
         """
