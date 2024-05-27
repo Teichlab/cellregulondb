@@ -410,6 +410,7 @@ class RegulonAtlas:
         target_genes: list = None,
         by: Union[str, List[str]] = None,
         node_columns: List[str] = None,
+        feedbacks: bool = False,
     ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """
         Returns the link and node tables for the regulon data.
@@ -429,11 +430,14 @@ class RegulonAtlas:
         Other columns from `self.adata.obs` will be grouped in lists and become columns of the link table.
         The `node_columns` argument can be used to make them columns of the node tables instead.
 
+        If feedbacks is set to True, targets in the link table that are transcription factors will be replaced by regulons (source nodes), if the `by` columns match.
+
         Args:
             regulons (list, optional): A list of regulons to include in the tables. If None, includes all regulons. Defaults to None.
             target_genes (list, optional): A list of target genes to include in the tables. If None, includes all target genes. Defaults to None.
             by (str, list, optional): The column(s) to group the regulons by. If None, will be `self.transcription_factor_col`. Defaults to None.
             node_columns (list, optional): A list of columns from `self.adata.obs` to include in the node tables. If None, will be []. Defaults to None.
+            feedbacks (bool, optional): Whether to replace target genes that are transcription factors with regulons. Defaults to False.
 
         Returns:
             Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]: A tuple containing the link table, regulon node table, and target gene node table.
@@ -473,13 +477,30 @@ class RegulonAtlas:
 
         # create node table (regulons)
         reg_df = regulon_df.groupby(by).apply(lambda df: df.T.apply(list, axis=1))
-        reg_df = reg_df[node_columns]
+        reg_df = reg_df[node_columns + by]
         if len(by) > 1:
             reg_df.index = reg_df.index.map(join_proc)  # join multi-index
         reg_df = reg_df.rename_axis(index="source").reset_index()
 
         # create node table (target genes)
         tg_df = self.adata.var.rename_axis(index="target").reset_index()
+
+        # replace target genes with regulons if feedbacks is True
+        # (do replacement only if a regulon with the respective `by` columns exists)
+        if feedbacks:
+            if reg_df["source"].str.contains(r"\([+-]\)", regex=True).any():
+                raise ValueError(
+                    "setting parameter 'feedbacks' to True with regulons that "
+                    "contain the sign ('+' or '-') is not supported"
+                )
+            src_parts = link_df["source"].str.split(" - ", expand=True)
+            src_parts[0] = link_df["target"]
+            regs = set(reg_df["source"])
+            test_reg = src_parts.apply(" - ".join, axis=1)
+            link_df["target"] = [
+                reg if reg in regs else trg
+                for reg, trg in zip(test_reg, link_df["target"])
+            ]
 
         return link_df, reg_df, tg_df
 
