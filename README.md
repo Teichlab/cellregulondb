@@ -21,3 +21,4 @@ pip install git+ssh://git@github.com/Teichlab/cellregulondb.git
 ## Example notebooks
 
 - [download and basic analysis](https://github.com/Teichlab/cellregulondb/blob/main/docs/notebooks/crdb_example_notebook.ipynb)
+- [network plotting](https://github.com/Teichlab/cellregulondb/blob/main/docs/notebooks/crdb_plot_network.ipynb)
