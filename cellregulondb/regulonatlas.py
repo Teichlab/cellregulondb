@@ -8,6 +8,7 @@ import scipy as sp
 import pandas as pd
 import networkx as nx
 import scanpy as sc
+import matplotlib.pyplot as plt
 
 import cellregulondb
 
@@ -876,6 +877,68 @@ class RegulonAtlas:
             + p9.xlab("")
             + p9.ylab("relevance score")
         )
+
+    def plot_target_gene_heatmap(
+        self,
+        by: Union[str, List[str]] = None,
+        subset: str = None,
+        min_regulon: int = 1,
+        top: int = None,
+        **kwargs,
+    ) -> Tuple[plt.Axes, plt.Figure]:
+        """
+        Plots a heatmap of target genes for each category in `by`.
+
+        This method groups the regulon data by the categories in `by` and computes the target genes for each group.
+        The target genes are computed using the `get_target_genes_by` method.
+        The results are plotted as a heatmap using the `seaborn` package.
+
+        Args:
+            by (str, list, optional): A list of categories (columns from `self.adata.obs`) to group the regulons by.
+                If None, uses `self.transcription_factor_col`. Defaults to None.
+            subset (str, optional): A query string to filter the data before grouping
+                (using `pandas.query(filter, engine='python')` on `self.adata.obs`). Defaults to no filtering if None.
+            min_regulon (int, optional): The minimum number of regulons a target gene should be present in. Defaults to 1.
+            top (int, optional): The number of top most frequent target genes to return. Defaults to None.
+            **kwargs: Additional keyword arguments to customize the heatmap. These arguments are passed to `seaborn.heatmap`.
+
+        Returns:
+            Tuple[plt.Axes, plt.Figure]: A tuple containing the heatmap axes and figure.
+        """
+        if by is None:
+            by = self.transcription_factor_col
+
+        sns_kwargs = {
+            "cmap": "viridis",
+            "cbar_kws": {"label": "number of target genes"},
+        }
+        sns_kwargs.update(kwargs)
+
+        target_genes = self.get_target_genes_by(
+            by=by, subset=subset, min_regulon=min_regulon, top=top, return_counts=True
+        )
+
+        try:
+            import seaborn as sns
+            import matplotlib.pyplot as plt
+        except ImportError:
+            raise ImportError(
+                "The 'seaborn' and 'matplotlib' packages are required for this method. "
+                "Please install them using 'pip install seaborn matplotlib' "
+                "or 'conda install seaborn matplotlib'."
+            )
+
+        fig, ax = plt.subplots(figsize=(15, 10))
+        sns.heatmap(
+            pd.DataFrame(target_genes).T.fillna(0),
+            ax=ax,
+            **sns_kwargs,
+        )
+        ax.set_title(f"Target genes by ({', '.join(by)})")
+        ax.set_xlabel("")
+        ax.set_ylabel("")
+
+        return ax, fig
 
     def perturbation_direction(self, gene_set: list):
         pass
