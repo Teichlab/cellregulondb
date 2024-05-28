@@ -58,6 +58,15 @@ def test_get_target_genes(regulon_df):
         len(target_genes) == 10
     ), "target genes for `top=10` are not correctly extracted"
 
+    # check the return_counts parameter
+    target_genes = ra.get_target_genes(return_counts=True, min_regulon=0)
+    assert isinstance(
+        target_genes, dict
+    ), "target genes are not returned as a dictionary"
+    assert (
+        len(target_genes) == regulon_df["target_gene"].nunique()
+    ), "counts not returned for all target genes"
+
 
 def test_get_tf_dict(regulon_df):
     """Test if the regulons are correctly extracted from RegulonAtlas"""

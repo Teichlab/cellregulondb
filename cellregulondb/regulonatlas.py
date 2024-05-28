@@ -283,7 +283,8 @@ class RegulonAtlas:
         regulons: Optional[Union[str, List[str], List[bool], pd.DataFrame]] = None,
         min_regulon: int = 1,
         top: int = None,
-    ) -> list:
+        return_counts: bool = False,
+    ) -> Union[list, dict]:
         """
         Returns the target genes in the regulon data.
 
@@ -294,6 +295,7 @@ class RegulonAtlas:
             regulons (list, optional): A list of regulons to consider. If None, all regulons are considered. Defaults to None.
             min_regulon (int, optional): The minimum number of regulons a target gene should be present in. Defaults to 1.
             top (int, optional): The number of top target genes to return. Defaults to None.
+            return_counts (bool, optional): Whether to return the target genes as a dictionary with their frequency instead. Defaults to False.
 
         Returns:
             list: A list of target genes.
@@ -311,12 +313,17 @@ class RegulonAtlas:
 
         # filter genes by frequency
         target_genes = genes[freq >= min_regulon].tolist()
+        freq = freq[freq >= min_regulon]
 
         # select top genes
         if top:
             target_genes = target_genes[:top]
+            freq = freq[:top]
 
-        return target_genes
+        if return_counts:
+            return dict(zip(target_genes, freq))
+        else:
+            return target_genes
 
     def get_target_genes_by(
         self,
@@ -324,6 +331,7 @@ class RegulonAtlas:
         subset: str = None,
         min_regulon: int = 1,
         top: int = None,
+        return_counts: bool = False,
     ) -> dict:
         """
         Returns the target genes for each category in `by`.
@@ -338,6 +346,7 @@ class RegulonAtlas:
                 (using `pandas.query(..., engine='python')` on `self.adata.obs`). Defaults to no filtering if None.
             min_regulon (int, optional): The minimum number of regulons a target gene should be present in. Defaults to 1.
             top (int, optional): The number of top target genes to return. Defaults to None.
+            return_counts (bool, optional): Whether to return the target genes as a dictionary with their frequency instead. Defaults to False.
 
         Returns:
             dict: A dictionary where the keys are the categories in `by` and the values are the target genes.
@@ -348,7 +357,6 @@ class RegulonAtlas:
         if subset:
             use_df = use_df.query(subset, engine="python")
 
-        # TODO: option to return counts per gene instead of list
         return (
             use_df.groupby(by, observed=False)
             .apply(
@@ -356,6 +364,7 @@ class RegulonAtlas:
                     regulons=df["regulon"].unique().tolist(),
                     min_regulon=min_regulon,
                     top=top,
+                    return_counts=return_counts,
                 ),
             )
             .to_dict()
