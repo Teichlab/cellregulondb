@@ -69,7 +69,7 @@ def get_transition_genes(
     """
     if adj is None:
         adj = ad.uns["paga"]["connectivities"]
-    if sp.issparse(adj):
+    if sp.sparse.issparse(adj):
         adj = adj.todense()
 
     # aggregate counts per group to get centroids
@@ -165,7 +165,7 @@ def get_regulon_match(
     Then directed arrows can be plotted with `sc.pl.paga` by passing `transitions=f"{key}_transitions"` as a parameter.
 
     Args:
-        connections (pd.DataFrame): Connection vector. If `sc.AnnData`, takes `ad.uns['crdb']['transition_genes']`.
+        connections (Union[pd.DataFrame, sc.AnnData]): Connection vector. If `sc.AnnData`, takes `ad.uns['crdb']['transition_genes']`.
         regulon_genes (Union[list, dict]): List or dictionary of regulon genes.
         reg_names (list, optional): List of regulon names. If None, uses the keys of `regulon_genes`, if this is a dict. Defaults to None.
         keys (list, optional): List of keys (regulon names) for which to store directed PAGA transitions.
@@ -180,7 +180,9 @@ def get_regulon_match(
         If `connections` is an AnnData object and `keys` is not None, stores the directed PAGA transitions in `ad.uns['paga']` for the keys.
     """
     if isinstance(connections, sc.AnnData):
-        connections = connections.uns["crdb"]["transition_genes"]
+        conn = connections.uns["crdb"]["transition_genes"]
+    else:
+        conn = connections
 
     if isinstance(regulon_genes, list):
         if not isinstance(regulon_genes[0], list):
@@ -189,39 +191,45 @@ def get_regulon_match(
         reg_names = list(regulon_genes.keys())
         regulon_genes = [regulon_genes[r] for r in reg_names]
 
+    if reg_names is None:
+        reg_names = []
+    assert isinstance(reg_names, list), "`reg_names` must be a list"
     if keys is None:
         keys = reg_names
+    assert isinstance(keys, list), "`keys` must be a list"
     assert set(keys) - set(reg_names) == set(), "`keys` must be subset of `reg_names`"
 
     # compute vector product between connections and regulon vector
     def _reg_vec(rg):
         if isinstance(rg, list):
-            return [1 if gene in rg else 0 for gene in connections.columns.tolist()]
+            return [1 if gene in rg else 0 for gene in conn.columns.tolist()]
         elif isinstance(rg, dict):
-            return [
-                rg[gene] if gene in rg else 0 for gene in connections.columns.tolist()
-            ]
+            return [rg[gene] if gene in rg else 0 for gene in conn.columns.tolist()]
         else:
             raise ValueError("need list or dict as input")
 
     regulon_vec = np.array([_reg_vec(rg) for rg in regulon_genes])
     vec_prod = np.dot(
         regulon_vec / np.linalg.norm(regulon_vec, axis=1).reshape(-1, 1),
-        (connections.T - connections.mean(axis=1))
-        / np.linalg.norm(connections, axis=1).reshape(1, -1),
+        (conn.T - conn.mean(axis=1)) / np.linalg.norm(conn, axis=1).reshape(1, -1),
     )  # product between unit vectors, adjust mean to avoid regulon biases
 
     # construct transition matrix / matrices
-    transition_mat = [
-        pd.Series(vp, index=connections.index).unstack(1).to_numpy() for vp in vec_prod
-    ]
+    transition_mat = [pd.Series(vp, index=conn.index).unstack(1) for vp in vec_prod]
     for tm in transition_mat:
         tm[np.isnan(tm)] = 0
 
-    if reg_names:
+    if len(reg_names) > 0:
         transition_mat = dict(zip(reg_names, transition_mat))
 
-    trans_mat = transition_mat[0] if len(transition_mat) == 1 else transition_mat
+    if isinstance(transition_mat, dict):
+        trans_mat = (
+            transition_mat[keys[0]] if len(transition_mat) == 1 else transition_mat
+        )
+    elif isinstance(transition_mat, list):
+        trans_mat = transition_mat[0] if len(transition_mat) == 1 else transition_mat
+    else:
+        raise ValueError("unexpected type of transition_mat")
 
     if inplace:
         if isinstance(connections, sc.AnnData):
@@ -281,12 +289,14 @@ def plot_transitions(ad: sc.AnnData, key: str, **kwargs) -> None:
         key (str): Key for the transitions.
         **kwargs: Additional keyword arguments to pass to `sc.pl.paga`.
     """
+    if "pos" not in ad.uns["paga"]:
+        _ = sc.pl.paga_compare(ad, show=False)
+
     paga_kwargs = {
         "transitions": f"{key}_transitions",
         "node_size_scale": 2,
         "edge_width_scale": 3,
         "threshold": 0.001,
-        "color": "cell_type",
         "cmap": "Reds",
         "labels": None,
         "pos": ad.uns["paga"]["pos"],

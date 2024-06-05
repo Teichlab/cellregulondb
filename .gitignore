@@ -164,3 +164,4 @@ cython_debug/
 .AppleDouble
 .LSOverride
 Thumbs.db
+docs/notebooks/data
