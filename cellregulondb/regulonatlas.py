@@ -622,7 +622,8 @@ class RegulonAtlas:
         transcription_factors: list = None,
         tissues: list = None,
         subset: str = None,
-    ) -> pd.DataFrame:
+        tolist: bool = False,
+    ) -> Union[pd.DataFrame, list]:
         """
         Finds regulons based on which target genes they regulate or other meta information.
 
@@ -639,9 +640,10 @@ class RegulonAtlas:
             transcription_factors (list, optional): A list of transcription factors to filter the regulons by. Defaults to None.
             tissues (list, optional): A list of tissues to filter the regulons by. Defaults to None.
             subset (str, optional): A query string to filter the regulons (using `pandas.query(subset, engine='python')` on `self.adata.obs`). Defaults to no filtering if None.
+            tolist (bool, optional): Whether to return the regulon names as a list instead of a `pd.DataFrame`. Defaults to False.
 
         Returns:
-            pd.DataFrame: A DataFrame containing regulons and meta-information associated with the target genes.
+            Union[pd.DataFrame, list]: A DataFrame containing the regulons that match the specified criteria with meta-information or a list of the regulon names.
         """
         # set arguments
         if target_genes_mode not in ["any", "all"]:
@@ -676,7 +678,10 @@ class RegulonAtlas:
         if subset:
             obs_df = obs_df.query(subset, engine="python")
 
-        return obs_df
+        if tolist:
+            return obs_df.index.tolist()
+        else:
+            return obs_df
 
     def calculate_embedding(
         self, n_neighbors: int = 10, plot: bool = False, add_leiden: float = None
