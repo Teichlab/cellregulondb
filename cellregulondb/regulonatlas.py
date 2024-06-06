@@ -223,6 +223,7 @@ class RegulonAtlas:
         target_genes: Optional[Union[str, List[str], List[bool]]] = None,
         shrink: bool = True,
         copy: bool = True,
+        **kwargs,
     ) -> "RegulonAtlas":
         """
         Subsets the data in `self.adata` based on the specified observations and variables.
@@ -238,23 +239,29 @@ class RegulonAtlas:
                 be retained regardless of whether they are present in any regulon, also set `shrink=False`. Defaults to None.
             shrink (bool, optional): Whether to remove target genes that are not present in any regulon. Defaults to True.
             copy (bool, optional): Whether to return a copy of the subsetted data. Defaults to True.
+            **kwargs: Additional keyword arguments to pass to the `find_regulons` method.
 
         Returns:
             cellregulondb.RegulonAtlas: A new RegulonAtlas object containing the subsetted data.
         """
         adata = self.adata
-        if regulons is not None:
+        if regulons is not None or len(kwargs) > 0:
             if isinstance(regulons, str):
                 regulons = [regulons]
             elif isinstance(regulons, pd.DataFrame):
                 regulons = regulons.index.tolist()
+            elif regulons is None and len(kwargs) > 0:
+                regulons = self.find_regulons(**kwargs, tolist=True)
             adata = adata[regulons, :]
+
         if target_genes is not None:
             if isinstance(target_genes, str):
                 target_genes = [target_genes]
             adata = adata[:, target_genes]
+
         if shrink:
             adata = adata[:, adata.X.sum(axis=0) > 0]
+
         if copy:
             adata = adata.copy()
 
