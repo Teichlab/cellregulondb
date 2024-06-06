@@ -1,4 +1,5 @@
 import numpy as np
+import scipy as sp
 import pandas as pd
 import scanpy as sc
 import networkx as nx
@@ -150,3 +151,56 @@ def plot_networkx(
             plt.show()
         else:
             return plt.gcf()
+
+
+def scale(series, min_val: float = 0, max_val: float = 1) -> pd.Series:
+    """
+    Scales a pandas Series to a specified range.
+
+    This method scales a Series to a specified range using the formula:
+    scaled = (x - min_x) / (max_x - min_x) * (max_val - min_val) + min_val
+
+    Args:
+        series (pd.Series): The series to scale.
+        min_val (int, optional): The minimum value of the range. Defaults to 0.
+        max_val (int, optional): The maximum value of the range. Defaults to 1.
+
+    Returns:
+        pd.Series: The scaled series.
+    """
+    return (series - series.min()) / (series.max() - series.min()) * (
+        max_val - min_val
+    ) + min_val
+
+
+def z_score(series):
+    """
+    Computes the z-score of a pandas Series.
+
+    This method computes the z-score of a Series using the formula:
+    z = (x - mean) / std
+
+    Args:
+        series (pd.Series): The series to compute the z-score for.
+
+    Returns:
+        pd.Series: The z-scored series.
+    """
+    return (series - series.mean()) / series.std()
+
+
+def robust_z_score(series):
+    """
+    Computes the robust z-score of a pandas Series.
+
+    This method computes the robust z-score of a Series using the formula:
+    z = 0.6745 * (x - median) / mad
+
+    Args:
+        series (pd.Series): The series to compute the robust z-score for.
+
+    Returns:
+        pd.Series: The robust z-scored series.
+    """
+    mad = sp.stats.median_abs_deviation(series, scale=1.0)
+    return 0.6745 * (series - series.median()) / mad
