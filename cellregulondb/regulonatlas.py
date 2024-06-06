@@ -825,15 +825,14 @@ class RegulonAtlas:
         try:
             import plotnine as p9
 
+            if figsize:
+                p9.options.figure_size = figsize
         except ImportError:
             raise ImportError(
                 "The 'plotnine' package is required for this method. "
-                "Please install it using 'pip install plotnine' "
-                "or 'conda install -c conda-forge plotnine'."
+                "Please install it using 'pip install plotnine==0.12.2' "
+                "or 'conda install -c conda-forge plotnine==0.12.2'."
             )
-
-        if figsize:
-            p9.options.figure_size = figsize
 
         if show_cat is None:
             show_cat = [
