@@ -1,6 +1,6 @@
 import warnings
 from os import PathLike
-from typing import Union, List, Tuple, Optional
+from typing import Union, List, Tuple, Optional, Callable
 from pathlib import Path
 import re
 import numpy as np
@@ -689,6 +689,65 @@ class RegulonAtlas:
             return obs_df.index.tolist()
         else:
             return obs_df
+
+    def rank_regulons(
+        self,
+        regulons: pd.DataFrame = None,
+        groupby: str = None,
+        rankby: str = "n_genes",
+        aggregate: Callable[[pd.Series], Union[int, float]] = lambda x: x.max(),
+        plot_top: int = None,
+        ylab: str = "Number of target genes",
+        figsize: Tuple[int, int] = (15, 5),
+        show: bool = True,
+    ) -> Union[Tuple[plt.Figure, plt.Axes, pd.DataFrame], pd.DataFrame]:
+        """
+        Groups, ranks and optionally plots regulons.
+
+        This method groups the regulon data by the unique values in the column specified by `groupby`,
+        and ranks them based on the column specified by `rankby`. Before ranking, the values in `rankby` are aggregated
+        using the method specified by `aggregate`. The top `plot_top` regulons are then plotted in a bar plot, if
+        `plot_top` is specified.
+
+        Args:
+            regulons (pd.DataFrame, optional): A DataFrame containing regulon information. If None, uses `self.adata.obs`. Defaults to None.
+            groupby (str, optional): The column in `self.adata.obs` to group the regulons by. If None, set to `self.transcription_factor_col`. Defaults to None.
+            rankby (str, optional): The column in `self.adata.obs` to rank the regulons by. Defaults to "n_genes".
+            aggregate (Callable[[pd.Series], Union[int, float]], optional): The method to aggregate the values in `rankby`. Defaults to lambda x: x.max().
+            plot_top (int, optional): The number of top regulons to plot. If None, does not plot. Defaults to None.
+            ylab (str, optional): The label for the y-axis in the plot. Defaults to "Number of target genes".
+            figsize (Tuple[int, int], optional): The size of the plot. Defaults to (15, 5).
+            show (bool, optional): Whether to show the plot or return plt.Figure, plt.Axes. Defaults to True.
+
+        Returns:
+            Union[Tuple[plt.Figure, plt.Axes, pd.DataFrame], pd.DataFrame]: A tuple containing the figure, axes, and
+                DataFrame with the ranking if plot_top is not None, otherwise only the DataFrame with the ranking.
+        """
+        if regulons is None:
+            regulons = self.adata.obs
+
+        if groupby is None:
+            groupby = self.transcription_factor_col
+
+        if rankby not in self.adata.obs.columns:
+            raise ValueError(f"Column '{rankby}' not found in `self.adata.obs`.")
+
+        df = regulons.astype({groupby: str}).groupby(groupby)[rankby].apply(aggregate)
+        df = df.sort_values(ascending=False)
+
+        if plot_top is not None:
+            with plt.rc_context({"figure.figsize": figsize}):
+                df[:plot_top].plot.bar()
+                fig, ax = plt.gcf(), plt.gca()
+                fig.subplots_adjust(bottom=0.4)
+                plt.ylabel(ylab)
+                plt.xticks(rotation=30, ha="right")
+                if show:
+                    plt.show()
+                else:
+                    return fig, ax, df
+
+        return df
 
     def calculate_embedding(
         self, n_neighbors: int = 10, plot: bool = False, add_leiden: float = None
