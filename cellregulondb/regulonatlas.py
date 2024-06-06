@@ -552,7 +552,9 @@ class RegulonAtlas:
 
         return link_df, reg_df, tg_df
 
-    def find_cell_types(self, cell_types: list, cell_type_col: str = None) -> dict:
+    def find_cell_types(
+        self, cell_types: list, cell_type_col: str = None, tolist: bool = False
+    ) -> Union[dict, list]:
         """
         Finds string matches for a list of cell types in the regulon data with an adaptive strategy.
 
@@ -567,9 +569,11 @@ class RegulonAtlas:
         Args:
             cell_types (list): A list of cell types to search for.
             cell_type_col (str, optional): The name of the column in `self.adata.obs` to search in. Defaults to `self.cell_type_col`.
+            tolist (bool, optional): Whether to return the matching cell types as a list instead of a dictionary. Defaults to False.
 
         Returns:
-            dict: A dictionary where the keys are the input cell types and the values are lists of matching cell types in the data.
+            Union[dict, list]: A dictionary where the keys are the input cell types and the values are lists of
+                matching cell types in the data or a list of only the matching cell types concatenated.
         """
         if cell_type_col is None:
             cell_type_col = self.cell_type_col
@@ -612,7 +616,10 @@ class RegulonAtlas:
 
             cell_type_matches[ct] = hits
 
-        return cell_type_matches
+        if tolist:
+            return [ct for cts in cell_type_matches.values() for ct in cts]
+        else:
+            return cell_type_matches
 
     def find_regulons(
         self,
