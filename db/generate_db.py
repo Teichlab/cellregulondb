@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
-#
-# pip install requests pandas pyscenic
-#
-import warnings
 
-warnings.filterwarnings("ignore")
+import warnings
 import os
 import gc
 import json
@@ -15,9 +11,17 @@ import logging
 import datetime
 import numpy as np
 import pandas as pd
-from pyscenic.cli.utils import load_signatures
 
+warnings.filterwarnings("ignore")
 logging.basicConfig(level="INFO", format="[%(asctime)s][%(levelname)s] %(message)s")
+
+try:
+    from pyscenic.cli.utils import load_signatures
+except ImportError:
+    logging.error(
+        "pyscenic not installed, please install it with 'pip install pyscenic'"
+    )
+    exit(1)
 
 sqlite3.register_adapter(np.int64, lambda val: int(val))
 sqlite3.register_adapter(np.float64, lambda val: float(val))
@@ -27,7 +31,9 @@ sqlite3.register_adapter(np.float64, lambda val: float(val))
 ###########################################################
 
 # DB name (uses 'cellregulon_<current date>.db' by default)
-TIMESTAMP = datetime.datetime.now().isoformat(sep="T", timespec="seconds").replace(":", "-")
+TIMESTAMP = (
+    datetime.datetime.now().isoformat(sep="T", timespec="seconds").replace(":", "-")
+)
 
 DB_PATH = f"cellregulon_{TIMESTAMP}.db"
 
@@ -176,7 +182,12 @@ CELL_TYPES = {}
 ###########################################################
 # Init DB and create tables and indices
 ###########################################################
+
+
 def create_db():
+    """
+    Create the DB and tables.
+    """
     # connect to db file and create DB and indices
     logging.info(f"Opening database '{DB_PATH}'")
     connection = sqlite3.connect(DB_PATH)
@@ -271,6 +282,9 @@ def create_db():
 
 
 def insert_dataset_lineage_cell_type_tissue():
+    """
+    Insert datasets, lineages, cell types and tissues into the DB.
+    """
     # connect to db file and create DB and indices
     logging.info(f"Opening database '{DB_PATH}'")
     connection = sqlite3.connect(DB_PATH)
@@ -319,6 +333,9 @@ def insert_dataset_lineage_cell_type_tissue():
 # Manifest processing and inserts
 ###########################################################
 def insert_aucell_and_subset():
+    """
+    Insert AUCell and subsetted regulons into the DB.
+    """
     connection = sqlite3.connect(DB_PATH)
     cursor = connection.cursor()
     whole_thing = time.time()
@@ -503,7 +520,12 @@ def insert_aucell_and_subset():
 ###########################################################
 # DE scores for each gene
 ###########################################################
+
+
 def insert_de_scores():
+    """
+    Insert DE scores into the DB.
+    """
     connection = sqlite3.connect(DB_PATH)
     cursor = connection.cursor()
     whole_thing = time.time()
@@ -532,43 +554,58 @@ def insert_de_scores():
         dif_exp = pd.read_csv(item["dif_exp"])
         # filter out genes not in the DB
         logging.info(f" ...filtering")
-        dif_exp = dif_exp[dif_exp['names'].isin(NODES.index)]
+        dif_exp = dif_exp[dif_exp["names"].isin(NODES.index)]
         # remove all 'doublets' cell types
         logging.info(f" ...removing doublets")
-        dif_exp = dif_exp[~dif_exp['group'].str.contains('doublet')]
+        dif_exp = dif_exp[~dif_exp["group"].str.contains("doublet")]
         # add column ids and translate to harmonized annotations
         logging.info(f" ...hamonizing cell types")
-        dif_exp['cell_type'] = [g.split("__")[0] for g in dif_exp['group'].values]
-        dif_exp['cell_type_id'] = dif_exp.apply(lambda x: CELL_TYPES.loc[mappings["cell_type"].get(x.cell_type)['ontology_label']].id if mappings["cell_type"].get(x.cell_type) else 0, axis = 1)
+        dif_exp["cell_type"] = [g.split("__")[0] for g in dif_exp["group"].values]
+        dif_exp["cell_type_id"] = dif_exp.apply(
+            lambda x: CELL_TYPES.loc[
+                mappings["cell_type"].get(x.cell_type)["ontology_label"]
+            ].id
+            if mappings["cell_type"].get(x.cell_type)
+            else 0,
+            axis=1,
+        )
         logging.info(f" ...hamonizing tissues")
         # have to do manual filtering because fetal lung doesn't have tissue property added
         if item["dataset"] != "fetal_lung":
-            dif_exp['tissue'] = [g.split("__")[1] for g in dif_exp['group'].values]
+            dif_exp["tissue"] = [g.split("__")[1] for g in dif_exp["group"].values]
         else:
-            dif_exp['tissue'] = "lung"
-        dif_exp['tissue_id'] = dif_exp.apply(lambda x: TISSUES.loc[mappings["tissue"].get(x.tissue)['ontology_label']].id if mappings["tissue"].get(x.tissue) else 0, axis = 1)
+            dif_exp["tissue"] = "lung"
+        dif_exp["tissue_id"] = dif_exp.apply(
+            lambda x: TISSUES.loc[mappings["tissue"].get(x.tissue)["ontology_label"]].id
+            if mappings["tissue"].get(x.tissue)
+            else 0,
+            axis=1,
+        )
         logging.info(f" ...matching ids")
-        dif_exp['dataset_id'] = dataset_id
-        dif_exp['node_id'] = dif_exp.apply(lambda x: NODES.loc[x.names].id, axis = 1)
+        dif_exp["dataset_id"] = dataset_id
+        dif_exp["node_id"] = dif_exp.apply(lambda x: NODES.loc[x.names].id, axis=1)
         logging.info(f" ...building inserts")
-        dif_exp['params'] = dif_exp.apply(lambda x: {
+        dif_exp["params"] = dif_exp.apply(
+            lambda x: {
                 "node_id": x.node_id,
                 "dataset_id": x.dataset_id,
                 "cell_type_id": x.cell_type_id,
                 "tissue_id": x.tissue_id,
                 "score": x.scores,
                 "pval": x.pvals,
-            }, axis = 1)
-    
+            },
+            axis=1,
+        )
+
         logging.info(f" ...executing inserts")
         cursor.executemany(
             """
             INSERT INTO node_scores (node_id, dataset_id, tissue_id, cell_type_id, dif_exp_score, dif_exp_pval)
             VALUES (:node_id, :dataset_id, :tissue_id, :cell_type_id, :score, :pval)
             """,
-            dif_exp['params'].values
+            dif_exp["params"].values,
         )
-        
+
         # commit this dataset
         connection.commit()
         logging.info(
@@ -591,7 +628,12 @@ def insert_de_scores():
 ###########################################################
 # Lookup gene symbol information in
 ###########################################################
+
+
 def lookup_symbols():
+    """
+    Lookup gene symbol information in Ensembl.
+    """
     # open db connection
     connection = sqlite3.connect(DB_PATH)
     cursor = connection.cursor()
