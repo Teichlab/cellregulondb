@@ -891,6 +891,9 @@ class RegulonAtlas:
         try:
             import plotnine as p9
 
+            if p9.__version__ != "0.12.2":
+                warnings.warn(f"not using recommended plotnine version 0.12.2 (installed version: {p9.__version__})")
+
             if figsize:
                 p9.options.figure_size = figsize
         except ImportError:
