@@ -1,5 +1,5 @@
 {
-    "latest": "0.1.0", 
+    "latest": "0.1.1", 
     "versions": [
         {"version": "0.1.0", "date": "2023-06-23T12:29:06", "url": "https://cellregulondb.cog.sanger.ac.uk/db/0.1.0/cellregulon.db"},
         {"version": "0.1.1", "date": "2025-07-23T11:13:23", "url": "https://cellregulondb.cog.sanger.ac.uk/db/0.1.1/cellregulon.db"}
