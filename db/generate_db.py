@@ -40,7 +40,7 @@ DB_PATH = f"cellregulon_{TIMESTAMP}.db"
 
 # mapping file for harmonization
 # see: https://docs.google.com/spreadsheets/d/1cD_4v3-Eqlchf2eQC2oiWOAgzlra_KAppJGwN45J2Ts/edit?usp=sharing
-# (a) expected results sheet fromat
+# (a) expected results sheet format
 # | dataset | lineage | cell_type | tissue |   aucell   | grnboost2 | cistarget | subreg   | dif_exp               | barcode_celltype_map     |
 # |   str   |   str   |    str    |  str   | file.loom  |  adj.csv  | reg.csv   | reg.yaml | DE_result_global.csv  | barcode_celltype_map.csv |
 # (b) # expected tissue, lineage and cell_type sheets fromat
@@ -49,13 +49,13 @@ DB_PATH = f"cellregulon_{TIMESTAMP}.db"
 MAPPING_FILE = "mapping.xlsx"
 mappings = {}
 # load mappings for harmonizing tissues/lineages/celltypes
-for m in ["tissue", "lineage", "cell_type"]:
-    mappings[m] = (
-        pd.read_excel(MAPPING_FILE, sheet_name=m)
-        .fillna("")
-        .set_index("original_term")
-        .to_dict(orient="index")
-    )
+# for m in ["tissue", "lineage", "cell_type"]:
+#     mappings[m] = (
+#         pd.read_excel(MAPPING_FILE, sheet_name=m)
+#         .fillna("")
+#         .set_index("original_term")
+#         .to_dict(orient="index")
+#     )
 mappings["results"] = pd.read_excel(MAPPING_FILE, sheet_name="results", index_col=False)
 mappings["datasets"] = pd.read_excel(
     MAPPING_FILE, sheet_name="datasets", index_col=False
@@ -297,32 +297,33 @@ def insert_dataset_lineage_cell_type_tissue():
             continue
         cursor.execute("INSERT INTO datasets (name) VALUES (?)", [d])
         DATASETS[d] = cursor.lastrowid
+        
     logging.info(f"==Inserting lineages list")
-    df = pd.read_excel(MAPPING_FILE, sheet_name="lineage", index_col=None)
-    for label in df.ontology_label.unique():
-        if pd.isna(label):
+    df = mappings["results"][["lineage_onto_label", "lineage_obo_id"]].drop_duplicates()
+    for _, row in df.iterrows():
+        if pd.isna(row["lineage_onto_label"]) or row["lineage_onto_label"] == "":
             continue
-        obo = df[df.ontology_label == label].ontology.values[0]
-        cursor.execute("INSERT INTO lineages (label,obo_id) VALUES (?,?)", [label, obo])
-        LINEAGES[label] = cursor.lastrowid
+        cursor.execute("INSERT INTO lineages (label,obo_id) VALUES (?,?)", 
+                      [row["lineage_onto_label"], row["lineage_obo_id"]])
+        LINEAGES[row["lineage_onto_label"]] = cursor.lastrowid
+        
     logging.info(f"==Inserting tissue list")
-    df = pd.read_excel(MAPPING_FILE, sheet_name="tissue", index_col=None)
-    for label in df.ontology_label.unique():
-        if pd.isna(label):
+    df = mappings["results"][["tissue_onto_label", "tissue_obo_id"]].drop_duplicates()
+    for _, row in df.iterrows():
+        if pd.isna(row["tissue_onto_label"]) or row["tissue_onto_label"] == "":
             continue
-        obo = df[df.ontology_label == label].ontology.values[0]
-        cursor.execute("INSERT INTO tissues (label,obo_id) VALUES (?,?)", [label, obo])
-        TISSUES[label] = cursor.lastrowid
+        cursor.execute("INSERT INTO tissues (label,obo_id) VALUES (?,?)", 
+                      [row["tissue_onto_label"], row["tissue_obo_id"]])
+        TISSUES[row["tissue_onto_label"]] = cursor.lastrowid
+        
     logging.info(f"==Inserting cell type list")
-    df = pd.read_excel(MAPPING_FILE, sheet_name="cell_type")
-    for label in df.ontology_label.unique():
-        if pd.isna(label):
+    df = mappings["results"][["cell_type_onto_label", "cell_type_obo_id"]].drop_duplicates()
+    for _, row in df.iterrows():
+        if pd.isna(row["cell_type_onto_label"]) or row["cell_type_onto_label"] == "":
             continue
-        obo = df[df.ontology_label == label].ontology.values[0]
-        cursor.execute(
-            "INSERT INTO cell_types (label,obo_id) VALUES (?,?)", [label, obo]
-        )
-        CELL_TYPES[label] = cursor.lastrowid
+        cursor.execute("INSERT INTO cell_types (label,obo_id) VALUES (?,?)", 
+                      [row["cell_type_onto_label"], row["cell_type_obo_id"]])
+        CELL_TYPES[row["cell_type_onto_label"]] = cursor.lastrowid
 
     connection.commit()
     cursor.close()
@@ -367,6 +368,11 @@ def insert_aucell_and_subset():
                 f"Skipping doublet {item['dataset']} :: {item['cell_type']} :: {item['tissue']}"
             )
             continue
+        if "unclassified" in item["cell_type"]:
+            logging.warning(
+                f"Skipping unclassified cluster {item['dataset']} :: {item['cell_type']} :: {item['tissue']}"
+            )
+            continue
 
         # check if we've change dataset?
         if dataset != item["dataset"]:
@@ -388,10 +394,23 @@ def insert_aucell_and_subset():
                 rss = None
 
         try:
-            # translate to harmonized annotations
-            tissue = mappings["tissue"].get(item["tissue"])
-            lineage = mappings["lineage"].get(item["lineage"])
-            cell_type = mappings["cell_type"].get(item["cell_type"])
+            # # translate to harmonized annotations
+            # tissue = mappings["tissue"].get(item["tissue"])
+            # lineage = mappings["lineage"].get(item["lineage"])
+            # cell_type = mappings["cell_type"].get(item["cell_type"])
+
+            tissue = {
+                "ontology_label": item["tissue_onto_label"],
+                "ontology": item["tissue_obo_id"]
+            }
+            lineage = {
+                "ontology_label": item["lineage_onto_label"], 
+                "ontology": item["lineage_obo_id"]
+            }
+            cell_type = {
+                "ontology_label": item["cell_type_onto_label"],
+                "ontology": item["cell_type_obo_id"]
+            }
 
             # celltype tissue key
             cell_type__tissue = item["cell_type"] + "__" + item["tissue"]
@@ -555,29 +574,48 @@ def insert_de_scores():
         # filter out genes not in the DB
         logging.info(f" ...filtering")
         dif_exp = dif_exp[dif_exp["names"].isin(NODES.index)]
-        # remove all 'doublets' cell types
-        logging.info(f" ...removing doublets")
+        # remove all 'doublets' and unclassified clusters
+        logging.info(f" ...removing doublets and unclassified clusters")
         dif_exp = dif_exp[~dif_exp["group"].str.contains("doublet")]
+        dif_exp = dif_exp[~dif_exp["group"].str.contains("unclassified")]
         # add column ids and translate to harmonized annotations
         logging.info(f" ...hamonizing cell types")
         dif_exp["cell_type"] = [g.split("__")[0] for g in dif_exp["group"].values]
-        dif_exp["cell_type_id"] = dif_exp.apply(
-            lambda x: CELL_TYPES.loc[
-                mappings["cell_type"].get(x.cell_type)["ontology_label"]
-            ].id
-            if mappings["cell_type"].get(x.cell_type)
-            else 0,
-            axis=1,
-        )
+        cell_type_mapping = mappings["results"][["cell_type", "cell_type_onto_label"]].drop_duplicates()
+        cell_type_mapping = dict(zip(cell_type_mapping["cell_type"], cell_type_mapping["cell_type_onto_label"]))
+        
+        # Define helper function to safely get cell type ID
+        def get_cell_type_id(x):
+            if x.cell_type in cell_type_mapping:
+                onto_label = cell_type_mapping.get(x.cell_type)
+                if onto_label in CELL_TYPES.index:
+                    # Force conversion to a simple integer
+                    return int(CELL_TYPES.loc[onto_label].id)
+            return 0
+
+        dif_exp["cell_type_id"] = dif_exp.apply(get_cell_type_id, axis=1)
+
+        # Similarly for tissue
+        def get_tissue_id(x):
+            if x.tissue in tissue_mapping:
+                onto_label = tissue_mapping.get(x.tissue)
+                if onto_label in TISSUES.index:
+                    return int(TISSUES.loc[onto_label].id)
+            return 0
+
+        dif_exp["tissue_id"] = dif_exp.apply(get_tissue_id, axis=1)
+
         logging.info(f" ...hamonizing tissues")
         # have to do manual filtering because fetal lung doesn't have tissue property added
         if item["dataset"] != "fetal_lung":
             dif_exp["tissue"] = [g.split("__")[1] for g in dif_exp["group"].values]
         else:
             dif_exp["tissue"] = "lung"
+        tissue_mapping = mappings["results"][["tissue", "tissue_onto_label"]].drop_duplicates()
+        tissue_mapping = dict(zip(tissue_mapping["tissue"], tissue_mapping["tissue_onto_label"]))
         dif_exp["tissue_id"] = dif_exp.apply(
-            lambda x: TISSUES.loc[mappings["tissue"].get(x.tissue)["ontology_label"]].id
-            if mappings["tissue"].get(x.tissue)
+            lambda x: TISSUES.loc[tissue_mapping.get(x.tissue)].id
+            if x.tissue in tissue_mapping
             else 0,
             axis=1,
         )
